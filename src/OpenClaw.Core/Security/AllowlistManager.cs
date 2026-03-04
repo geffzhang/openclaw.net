@@ -58,14 +58,26 @@ public sealed class AllowlistManager
             var current = TryGetDynamic(channelId);
             var next = update(current) with { UpdatedAtUtc = DateTimeOffset.UtcNow };
 
+            var path = GetPath(channelId);
+            var tmp = path + ".tmp";
             try
             {
                 Directory.CreateDirectory(_rootDir);
                 var json = JsonSerializer.Serialize(next, CoreJsonContext.Default.ChannelAllowlistFile);
-                File.WriteAllText(GetPath(channelId), json);
+                File.WriteAllText(tmp, json);
+                File.Move(tmp, path, overwrite: true);
             }
             catch (Exception ex)
             {
+                try
+                {
+                    if (File.Exists(tmp))
+                        File.Delete(tmp);
+                }
+                catch
+                {
+                    // Best-effort cleanup
+                }
                 _logger.LogWarning(ex, "Failed to persist allowlist file for channel={ChannelId}", channelId);
             }
         }

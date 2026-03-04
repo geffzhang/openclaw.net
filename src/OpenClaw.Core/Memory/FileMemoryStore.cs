@@ -57,7 +57,13 @@ public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch
         {
             try
             {
-                await using var legacyStream = File.OpenRead(legacyPath);
+                await using var legacyStream = new FileStream(legacyPath, new FileStreamOptions
+                {
+                    Mode = FileMode.Open,
+                    Access = FileAccess.Read,
+                    Share = FileShare.Read,
+                    Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+                });
                 var session = await JsonSerializer.DeserializeAsync(legacyStream, CoreJsonContext.Default.Session, ct);
                 if (session is not null)
                 {
@@ -78,7 +84,13 @@ public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch
 
         try
         {
-            await using var stream = File.OpenRead(filePath);
+            await using var stream = new FileStream(filePath, new FileStreamOptions
+            {
+                Mode = FileMode.Open,
+                Access = FileAccess.Read,
+                Share = FileShare.Read,
+                Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+            });
             var loaded = await JsonSerializer.DeserializeAsync(stream, CoreJsonContext.Default.Session, ct);
             
             if (loaded is not null)
@@ -104,7 +116,13 @@ public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch
         try
         {
             // Write to temp file first (atomic write pattern)
-            await using (var stream = File.Create(tempPath))
+            await using (var stream = new FileStream(tempPath, new FileStreamOptions
+            {
+                Mode = FileMode.Create,
+                Access = FileAccess.Write,
+                Share = FileShare.None,
+                Options = FileOptions.Asynchronous
+            }))
             {
                 await JsonSerializer.SerializeAsync(stream, session, CoreJsonContext.Default.Session, ct);
                 await stream.FlushAsync(ct);
@@ -280,7 +298,13 @@ public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch
 
         try
         {
-            await using (var stream = File.Create(tempPath))
+            await using (var stream = new FileStream(tempPath, new FileStreamOptions
+            {
+                Mode = FileMode.Create,
+                Access = FileAccess.Write,
+                Share = FileShare.None,
+                Options = FileOptions.Asynchronous
+            }))
             {
                 await JsonSerializer.SerializeAsync(stream, branch, CoreJsonContext.Default.SessionBranch, ct);
                 await stream.FlushAsync(ct);
@@ -308,7 +332,13 @@ public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch
 
         try
         {
-            await using var stream = File.OpenRead(filePath);
+            await using var stream = new FileStream(filePath, new FileStreamOptions
+            {
+                Mode = FileMode.Open,
+                Access = FileAccess.Read,
+                Share = FileShare.Read,
+                Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+            });
             return await JsonSerializer.DeserializeAsync(stream, CoreJsonContext.Default.SessionBranch, ct);
         }
         catch

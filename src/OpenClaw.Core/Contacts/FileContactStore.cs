@@ -6,7 +6,7 @@ namespace OpenClaw.Core.Contacts;
 public sealed class FileContactStore : IContactStore
 {
     private readonly string _path;
-    private readonly Lock _lock = new();
+    private readonly SemaphoreSlim _gate = new(1, 1);
 
     public FileContactStore(string basePath)
     {
@@ -14,21 +14,27 @@ public sealed class FileContactStore : IContactStore
         _path = Path.Combine(basePath, "contacts.json");
     }
 
-    public ValueTask<Contact?> GetAsync(string phoneE164, CancellationToken ct)
+    public async ValueTask<Contact?> GetAsync(string phoneE164, CancellationToken ct)
     {
-        lock (_lock)
+        await _gate.WaitAsync(ct);
+        try
         {
-            var state = LoadUnsafe();
+            var state = await LoadUnsafeAsync(ct);
             state.ContactsByPhone.TryGetValue(phoneE164, out var contact);
-            return ValueTask.FromResult(contact);
+            return contact;
+        }
+        finally
+        {
+            _gate.Release();
         }
     }
 
-    public ValueTask<Contact> TouchAsync(string phoneE164, CancellationToken ct)
+    public async ValueTask<Contact> TouchAsync(string phoneE164, CancellationToken ct)
     {
-        lock (_lock)
+        await _gate.WaitAsync(ct);
+        try
         {
-            var state = LoadUnsafe();
+            var state = await LoadUnsafeAsync(ct);
             if (!state.ContactsByPhone.TryGetValue(phoneE164, out var contact))
             {
                 contact = new Contact { PhoneE164 = phoneE164 };
@@ -36,16 +42,21 @@ public sealed class FileContactStore : IContactStore
             }
 
             contact.LastSeenAt = DateTimeOffset.UtcNow;
-            SaveUnsafe(state);
-            return ValueTask.FromResult(contact);
+            await SaveUnsafeAsync(state, ct);
+            return contact;
+        }
+        finally
+        {
+            _gate.Release();
         }
     }
 
-    public ValueTask SetDoNotTextAsync(string phoneE164, bool doNotText, CancellationToken ct)
+    public async ValueTask SetDoNotTextAsync(string phoneE164, bool doNotText, CancellationToken ct)
     {
-        lock (_lock)
+        await _gate.WaitAsync(ct);
+        try
         {
-            var state = LoadUnsafe();
+            var state = await LoadUnsafeAsync(ct);
             if (!state.ContactsByPhone.TryGetValue(phoneE164, out var contact))
             {
                 contact = new Contact { PhoneE164 = phoneE164 };
@@ -54,29 +65,76 @@ public sealed class FileContactStore : IContactStore
 
             contact.DoNotText = doNotText;
             contact.LastSeenAt = DateTimeOffset.UtcNow;
-            SaveUnsafe(state);
-            return ValueTask.CompletedTask;
+            await SaveUnsafeAsync(state, ct);
+            return;
+        }
+        finally
+        {
+            _gate.Release();
         }
     }
 
-    private ContactStoreState LoadUnsafe()
+    private async ValueTask<ContactStoreState> LoadUnsafeAsync(CancellationToken ct)
     {
         if (!File.Exists(_path))
             return new ContactStoreState();
+        try
+        {
+            await using var stream = new FileStream(_path, new FileStreamOptions
+            {
+                Mode = FileMode.Open,
+                Access = FileAccess.Read,
+                Share = FileShare.Read,
+                Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+            });
 
-        using var stream = File.OpenRead(_path);
-        return JsonSerializer.Deserialize(stream, CoreJsonContext.Default.ContactStoreState)
-            ?? new ContactStoreState();
+            return await JsonSerializer.DeserializeAsync(stream, CoreJsonContext.Default.ContactStoreState, ct)
+                ?? new ContactStoreState();
+        }
+        catch (FileNotFoundException)
+        {
+            return new ContactStoreState();
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return new ContactStoreState();
+        }
+        catch (JsonException)
+        {
+            return new ContactStoreState();
+        }
     }
 
-    private void SaveUnsafe(ContactStoreState state)
+    private async ValueTask SaveUnsafeAsync(ContactStoreState state, CancellationToken ct)
     {
         var tmp = _path + ".tmp";
-        using (var stream = File.Create(tmp))
+        try
         {
-            JsonSerializer.Serialize(stream, state, CoreJsonContext.Default.ContactStoreState);
-        }
+            await using (var stream = new FileStream(tmp, new FileStreamOptions
+            {
+                Mode = FileMode.Create,
+                Access = FileAccess.Write,
+                Share = FileShare.None,
+                Options = FileOptions.Asynchronous
+            }))
+            {
+                await JsonSerializer.SerializeAsync(stream, state, CoreJsonContext.Default.ContactStoreState, ct);
+                await stream.FlushAsync(ct);
+            }
 
-        File.Move(tmp, _path, overwrite: true);
+            File.Move(tmp, _path, overwrite: true);
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(tmp))
+                    File.Delete(tmp);
+            }
+            catch
+            {
+                // Best-effort cleanup
+            }
+        }
     }
 }
