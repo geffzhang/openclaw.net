@@ -44,6 +44,25 @@ public class PluginDiscoveryTests : IDisposable
     }
 
     [Fact]
+    public void Discover_SkipsBrokenManifestJson()
+    {
+        // Arrange – invalid manifest JSON should be ignored without throwing
+        var pluginDir = Path.Combine(_tempDir, "broken-plugin");
+        Directory.CreateDirectory(pluginDir);
+
+        File.WriteAllText(Path.Combine(pluginDir, "openclaw.plugin.json"), "{ this is not valid json");
+        File.WriteAllText(Path.Combine(pluginDir, "index.ts"), "export default function() {}");
+
+        var config = new PluginsConfig { Load = new PluginLoadConfig { Paths = [_tempDir] } };
+
+        // Act
+        var discovered = PluginDiscovery.Discover(config);
+
+        // Assert
+        Assert.Empty(discovered);
+    }
+
+    [Fact]
     public void Discover_FindsStandaloneFile()
     {
         // Arrange – a bare .ts file with no manifest

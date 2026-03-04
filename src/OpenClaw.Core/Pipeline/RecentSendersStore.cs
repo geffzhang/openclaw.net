@@ -25,7 +25,7 @@ public sealed class RecentSendersStore
 {
     private readonly string _rootDir;
     private readonly ILogger<RecentSendersStore> _logger;
-    private readonly ConcurrentDictionary<string, object> _locks = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _gates = new(StringComparer.Ordinal);
     private readonly int _maxEntries;
 
     public RecentSendersStore(string baseStoragePath, ILogger<RecentSendersStore> logger, int maxEntries = 50)
@@ -33,6 +33,7 @@ public sealed class RecentSendersStore
         _rootDir = Path.Combine(baseStoragePath, "recent_senders");
         _logger = logger;
         _maxEntries = Math.Clamp(maxEntries, 5, 500);
+        Directory.CreateDirectory(_rootDir);
     }
 
     public async Task RecordAsync(string channelId, string senderId, string? senderName, CancellationToken ct)
@@ -40,20 +41,14 @@ public sealed class RecentSendersStore
         if (string.IsNullOrWhiteSpace(channelId) || string.IsNullOrWhiteSpace(senderId))
             return;
 
-        var gate = _locks.GetOrAdd(channelId, _ => new object());
-        lock (gate)
-        {
-            Directory.CreateDirectory(_rootDir);
-        }
-
+        var gate = _gates.GetOrAdd(channelId, _ => new SemaphoreSlim(1, 1));
         try
         {
-            var path = GetPath(channelId);
-            RecentSendersFile file;
-
-            lock (gate)
+            await gate.WaitAsync(ct);
+            try
             {
-                file = TryReadUnlocked(path);
+                var path = GetPath(channelId);
+                var file = await LoadUnlockedAsync(path, ct);
 
                 var now = DateTimeOffset.UtcNow;
                 var existingIdx = file.Senders.FindIndex(s => string.Equals(s.SenderId, senderId, StringComparison.Ordinal));
@@ -76,16 +71,86 @@ public sealed class RecentSendersStore
                 if (file.Senders.Count > _maxEntries)
                     file.Senders.RemoveRange(_maxEntries, file.Senders.Count - _maxEntries);
 
-                var json = JsonSerializer.Serialize(file, CoreJsonContext.Default.RecentSendersFile);
-                File.WriteAllText(path, json);
+                await SaveUnlockedAsync(path, file, ct);
             }
+            finally
+            {
+                gate.Release();
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to record recent sender for channel={ChannelId}", channelId);
         }
+    }
 
-        await Task.CompletedTask;
+    private static async ValueTask<RecentSendersFile> LoadUnlockedAsync(string path, CancellationToken ct)
+    {
+        if (!File.Exists(path))
+            return new RecentSendersFile();
+
+        try
+        {
+            await using var stream = new FileStream(path, new FileStreamOptions
+            {
+                Mode = FileMode.Open,
+                Access = FileAccess.Read,
+                Share = FileShare.Read,
+                Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+            });
+
+            var loaded = await JsonSerializer.DeserializeAsync(stream, CoreJsonContext.Default.RecentSendersFile, ct);
+            return loaded is null || loaded.Senders is null ? new RecentSendersFile() : loaded;
+        }
+        catch (FileNotFoundException)
+        {
+            return new RecentSendersFile();
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return new RecentSendersFile();
+        }
+        catch (JsonException)
+        {
+            return new RecentSendersFile();
+        }
+    }
+
+    private static async ValueTask SaveUnlockedAsync(string path, RecentSendersFile file, CancellationToken ct)
+    {
+        var tmp = path + ".tmp";
+        try
+        {
+            await using (var stream = new FileStream(tmp, new FileStreamOptions
+            {
+                Mode = FileMode.Create,
+                Access = FileAccess.Write,
+                Share = FileShare.None,
+                Options = FileOptions.Asynchronous
+            }))
+            {
+                await JsonSerializer.SerializeAsync(stream, file, CoreJsonContext.Default.RecentSendersFile, ct);
+                await stream.FlushAsync(ct);
+            }
+
+            File.Move(tmp, path, overwrite: true);
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(tmp))
+                    File.Delete(tmp);
+            }
+            catch
+            {
+                // Best-effort cleanup
+            }
+        }
     }
 
     public RecentSenderEntry? TryGetLatest(string channelId)
@@ -133,22 +198,5 @@ public sealed class RecentSendersStore
         if (string.IsNullOrWhiteSpace(safe))
             safe = "unknown";
         return Path.Combine(_rootDir, safe + ".json");
-    }
-
-    private static RecentSendersFile TryReadUnlocked(string path)
-    {
-        try
-        {
-            if (!File.Exists(path))
-                return new RecentSendersFile();
-
-            var text = File.ReadAllText(path);
-            return JsonSerializer.Deserialize(text, CoreJsonContext.Default.RecentSendersFile)
-                   ?? new RecentSendersFile();
-        }
-        catch
-        {
-            return new RecentSendersFile();
-        }
     }
 }

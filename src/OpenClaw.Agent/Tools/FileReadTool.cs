@@ -29,7 +29,13 @@ public sealed class FileReadTool : ITool
         if (!File.Exists(path))
             return $"Error: File not found: {path}";
 
-        await using var stream = File.OpenRead(path);
+        await using var stream = new FileStream(path, new FileStreamOptions
+        {
+            Mode = FileMode.Open,
+            Access = FileAccess.Read,
+            Share = FileShare.Read,
+            Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+        });
         using var reader = new StreamReader(stream);
 
         var sb = new System.Text.StringBuilder(capacity: 4096);

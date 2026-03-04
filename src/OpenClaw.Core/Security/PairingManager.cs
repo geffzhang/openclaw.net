@@ -184,15 +184,26 @@ public sealed class PairingManager
 
     private void PersistApprovedSenders()
     {
+        var tmp = _approvedListPath + ".tmp";
         try
         {
             Directory.CreateDirectory(_storageDir);
             var list = _approvedSenders.Keys.ToList();
             var json = JsonSerializer.Serialize(list, OpenClaw.Core.Models.CoreJsonContext.Default.ListString);
-            File.WriteAllText(_approvedListPath, json);
+            File.WriteAllText(tmp, json);
+            File.Move(tmp, _approvedListPath, overwrite: true);
         }
         catch (Exception ex)
         {
+            try
+            {
+                if (File.Exists(tmp))
+                    File.Delete(tmp);
+            }
+            catch
+            {
+                // Best-effort cleanup
+            }
             _logger.LogError(ex, "Failed to persist approved pairing list to {Path}", _approvedListPath);
         }
     }
