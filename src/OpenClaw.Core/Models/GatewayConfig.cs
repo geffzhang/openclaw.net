@@ -12,6 +12,7 @@ public sealed class GatewayConfig
     public int Port { get; set; } = 18789;
     public string? AuthToken { get; set; }
     public LlmProviderConfig Llm { get; set; } = new();
+    public BotSharpConfig BotSharp { get; set; } = new();
     public MemoryConfig Memory { get; set; } = new();
     public SecurityConfig Security { get; set; } = new();
     public WebSocketConfig WebSocket { get; set; } = new();
@@ -35,6 +36,12 @@ public sealed class GatewayConfig
 
     /// <summary>Seconds to wait for in-flight requests to complete during shutdown. 0 = no drain.</summary>
     public int GracefulShutdownSeconds { get; set; } = 15;
+}
+
+public sealed class BotSharpConfig
+{
+    public bool Enabled { get; set; } = true;
+    public string AgentId { get; set; } = "router";
 }
 
 public sealed class LlmProviderConfig

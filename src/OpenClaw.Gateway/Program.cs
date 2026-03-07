@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Net.Http.Headers;
+using BotSharp.Core;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.WebUtilities;
@@ -24,6 +25,7 @@ using OpenClaw.Core.Skills;
 using OpenClaw.Core.Observability;
 using OpenClaw.Core.Validation;
 using OpenClaw.Gateway.Extensions;
+using OpenClaw.Gateway.Runtime;
 
 // ── Bootstrap ──────────────────────────────────────────────────────────
 var builder = WebApplication.CreateSlimBuilder(args);
@@ -198,6 +200,7 @@ builder.Services.AddSingleton(sp =>
         sp.GetRequiredService<IMemoryStore>(),
         config,
         sp.GetRequiredService<ILoggerFactory>().CreateLogger("SessionManager")));
+builder.Services.AddBotSharpCore(builder.Configuration);
 builder.Services.AddSingleton<MemoryRetentionSweeperService>();
 builder.Services.AddSingleton<IMemoryRetentionCoordinator>(sp => sp.GetRequiredService<MemoryRetentionSweeperService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<MemoryRetentionSweeperService>());
@@ -428,6 +431,15 @@ if (config.Delegation.Enabled && config.Delegation.Profiles.Count > 0)
         recall: config.Memory.Recall);
 }
 
+IAgentRuntime runtimeAdapter = agentRuntime;
+if (config.BotSharp.Enabled)
+{
+    runtimeAdapter = new BotSharpRuntimeAdapter(
+        app.Services.GetRequiredService<IServiceScopeFactory>(),
+        app.Services.GetRequiredService<ILogger<BotSharpRuntimeAdapter>>(),
+        config.BotSharp.AgentId);
+}
+
 // ── Middleware Pipeline ────────────────────────────────────────────────
 var middlewareList = new List<IMessageMiddleware>();
 if (config.SessionRateLimitPerMinute > 0)
@@ -574,7 +586,7 @@ app.MapGet("/metrics", (HttpContext ctx) =>
         return Results.Unauthorized();
 
     runtimeMetrics.SetActiveSessions(sessionManager.ActiveCount);
-    runtimeMetrics.SetCircuitBreakerState((int)agentRuntime.CircuitBreakerState);
+    runtimeMetrics.SetCircuitBreakerState(runtimeAdapter is AgentRuntime ar ? (int)ar.CircuitBreakerState : 0);
     return Results.Json(runtimeMetrics.Snapshot(), CoreJsonContext.Default.MetricsSnapshot);
 });
 
@@ -722,7 +734,7 @@ app.MapPost("/v1/chat/completions", async (HttpContext ctx) =>
             await ctx.Response.WriteAsync($"data: {roleJson}\n\n", ctx.RequestAborted);
             await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
 
-            await foreach (var evt in agentRuntime.RunStreamingAsync(session, userText ?? "", ctx.RequestAborted))
+            await foreach (var evt in runtimeAdapter.RunStreamingAsync(session, userText ?? "", ctx.RequestAborted))
             {
                 if (evt.Type == AgentStreamEventType.TextDelta && !string.IsNullOrEmpty(evt.Content))
                 {
@@ -752,7 +764,7 @@ app.MapPost("/v1/chat/completions", async (HttpContext ctx) =>
         else
         {
             // Non-streaming
-            var result = await agentRuntime.RunAsync(session, userText ?? "", ctx.RequestAborted);
+            var result = await runtimeAdapter.RunAsync(session, userText ?? "", ctx.RequestAborted);
 
             var response = new OpenAiChatCompletionResponse
             {
@@ -844,7 +856,7 @@ app.MapPost("/v1/responses", async (HttpContext ctx) =>
 
     try
     {
-        var result = await agentRuntime.RunAsync(session, req.Input, ctx.RequestAborted);
+        var result = await runtimeAdapter.RunAsync(session, req.Input, ctx.RequestAborted);
 
         var responseId = $"resp-{Guid.NewGuid():N}"[..24];
         var msgId = $"msg-{Guid.NewGuid():N}"[..23];
@@ -920,7 +932,7 @@ GatewayWorkers.Start(
     pipeline,
     middlewarePipeline,
     wsChannel,
-    agentRuntime,
+    runtimeAdapter,
     channelAdapters,
     config,
     toolApprovalService,
@@ -1181,7 +1193,7 @@ app.MapGet("/doctor", async (HttpContext ctx) =>
         },
         runtime = new
         {
-            circuitBreaker = agentRuntime.CircuitBreakerState.ToString(),
+            circuitBreaker = runtimeAdapter is AgentRuntime ar ? ar.CircuitBreakerState.ToString() : "n/a",
             activeSessions = sessionManager.ActiveCount
         },
         skills = new

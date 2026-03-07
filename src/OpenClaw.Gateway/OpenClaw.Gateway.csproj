@@ -2,31 +2,16 @@
   <PropertyGroup>
     <RootNamespace>OpenClaw.Gateway</RootNamespace>
     <OutputType>Exe</OutputType>
-    <PublishAot>true</PublishAot>
-    <StripSymbols>true</StripSymbols>
-    <OptimizationPreference>Size</OptimizationPreference>
-    <!-- Aggressive AOT trimming for minimal binary -->
-    <IlcGenerateStackTraceData>false</IlcGenerateStackTraceData>
-    <IlcOptimizationPreference>Size</IlcOptimizationPreference>
-    <IlcFoldIdenticalMethodBodies>true</IlcFoldIdenticalMethodBodies>
-    <UseSystemResourceKeys>true</UseSystemResourceKeys>
-    <EventSourceSupport>false</EventSourceSupport>
-    <DebuggerSupport>false</DebuggerSupport>
-    <MetricsSupport>true</MetricsSupport>
-    <HttpActivityPropagationSupport>false</HttpActivityPropagationSupport>
-    <!-- Playwright is not AOT-compatible (deep reflection usage). Suppress all trim/AOT analysis warnings. -->
-    <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
-    <NoWarn>$(NoWarn);IL2104;IL3000;IL3002;IL3050;IL3053</NoWarn>
   </PropertyGroup>
-  <ItemGroup>
-    <TrimmerRootAssembly Include="Microsoft.Playwright" />
-  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\OpenClaw.Core\OpenClaw.Core.csproj" />
     <ProjectReference Include="..\OpenClaw.Agent\OpenClaw.Agent.csproj" />
     <ProjectReference Include="..\OpenClaw.Channels\OpenClaw.Channels.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="BotSharp.Abstraction" Version="5.2.0" />
+    <PackageReference Include="BotSharp.Core" Version="5.2.0" />
+    <PackageReference Include="BotSharp.Plugin.OpenAI" Version="5.2.0" />
     <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.0" />
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.15.0" />
     <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.0" />
