@@ -83,7 +83,7 @@ public sealed class BotSharpRuntimeAdapter(
     {
         if (_conversationMap.TryGetValue(session.Id, out var existingConversationId))
         {
-            conversationService.SetConversationId(existingConversationId, new List<MessageState>());
+            conversationService.SetConversationId(existingConversationId, new List<MessageState>(), false);
             return;
         }
 
@@ -97,7 +97,7 @@ public sealed class BotSharpRuntimeAdapter(
         if (string.IsNullOrWhiteSpace(conversation.Id))
         {
             logger.LogWarning("BotSharp returned an empty conversation id for session {SessionId}", session.Id);
-            return;
+            throw new InvalidOperationException($"BotSharp returned an empty conversation id for session {session.Id}.");
         }
 
         _conversationMap[session.Id] = conversation.Id;

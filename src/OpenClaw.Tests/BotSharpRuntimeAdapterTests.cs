@@ -76,6 +76,46 @@ public class BotSharpRuntimeAdapterTests
         Assert.Equal(AgentStreamEventType.Done, events[1].Type);
     }
 
+    [Fact]
+    public async Task RunAsync_ThrowsWhenBotSharpSendMessageFails()
+    {
+        var conversation = Substitute.For<IConversationService>();
+        conversation.NewConversation(Arg.Any<Conversation>())
+            .Returns(Task.FromResult(new Conversation { Id = "conv-fail" }));
+        conversation.SendMessage(
+                "router",
+                Arg.Any<RoleDialogModel>(),
+                Arg.Any<PostbackMessageModel?>(),
+                Arg.Any<Func<RoleDialogModel, Task>>())
+            .Returns(Task.FromResult(false));
+
+        var sut = new BotSharpRuntimeAdapter(
+            BuildScopeFactory(conversation),
+            NullLogger<BotSharpRuntimeAdapter>.Instance,
+            "router");
+        var session = new Session { Id = "s-3", ChannelId = "websocket", SenderId = "user-3" };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            sut.RunAsync(session, "hello", CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task RunAsync_ThrowsWhenConversationIdIsEmpty()
+    {
+        var conversation = Substitute.For<IConversationService>();
+        conversation.NewConversation(Arg.Any<Conversation>())
+            .Returns(Task.FromResult(new Conversation { Id = "" }));
+
+        var sut = new BotSharpRuntimeAdapter(
+            BuildScopeFactory(conversation),
+            NullLogger<BotSharpRuntimeAdapter>.Instance,
+            "router");
+        var session = new Session { Id = "s-4", ChannelId = "websocket", SenderId = "user-4" };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            sut.RunAsync(session, "hello", CancellationToken.None));
+    }
+
     private static IServiceScopeFactory BuildScopeFactory(IConversationService conversation)
     {
         var services = new ServiceCollection();
