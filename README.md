@@ -39,6 +39,7 @@ graph TD
 - [Tool Guide](TOOLS_GUIDE.md) — Detailed setup for all 18+ native tools.
 - [Hardening Profiles](TOOLS_GUIDE.md#copypaste-hardening-profiles) — Copy/paste dev/staging/prod security setups.
 - [User Guide](USER_GUIDE.md) — Core concepts and architecture.
+- [Microsoft Agent Framework Interop](MICROSOFT_AGENT_FRAMEWORK.md) — Optional MAF adapter integration.
 - [Security Guide](SECURITY.md) — Mandatory reading for public deployments.
 - [Changelog](CHANGELOG.md) — Tracked project changes.
 - [Docker Hub Overview](DOCKERHUB.md) — Paste-ready README for `tellikoroma/openclaw.net`.
@@ -197,6 +198,16 @@ Notes:
 Available:
 - `src/OpenClaw.SemanticKernelAdapter` — optional adapter library that exposes SK functions as OpenClaw tools.
 - `samples/OpenClaw.SemanticKernelInteropHost` — runnable sample host demonstrating `/v1/responses` without requiring external LLM access.
+
+## Microsoft Agent Framework interop (optional)
+
+OpenClaw.NET can also host Microsoft Agent Framework orchestration behind OpenClaw tools.
+
+- Keep MAF integration in an optional adapter package so gateway/core stays NativeAOT-friendly.
+- Expose a single entrypoint tool (`microsoft_agent_framework`) and keep OpenClaw policy controls (auth/rate-limit/tool approval) in front.
+- Implement the host-side MAF runner in your app and wire it to the adapter.
+
+More details: `MICROSOFT_AGENT_FRAMEWORK.md`.
 
 ## Telegram Webhook channel
 
