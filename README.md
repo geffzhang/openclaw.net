@@ -19,7 +19,7 @@ Self-hosted OpenClaw.NET gateway + agent runtime in .NET (NativeAOT-friendly).
 - [Startup Architecture Notes](docs/architecture-startup-refactor.md) — Current bootstrap/composition/profile/pipeline layout.
 - [Security Guide](SECURITY.md) — Mandatory reading for public deployments.
 - [Changelog](CHANGELOG.md) — Tracked project changes.
-- [Docker Hub Overview](DOCKERHUB.md) — Paste-ready README for `tellikoroma/openclaw.net`.
+- [Docker Hub Overview](DOCKERHUB.md)
 
 ## Architecture
 
