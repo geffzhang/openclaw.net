@@ -16,5 +16,7 @@
   <Project Path="src/OpenClaw.Channels/OpenClaw.Channels.csproj" />
   <Project Path="src/OpenClaw.Core/OpenClaw.Core.csproj" />
   <Project Path="src/OpenClaw.Gateway/OpenClaw.Gateway.csproj" />
+  <Project Path="src/OpenClaw.PluginKit/OpenClaw.PluginKit.csproj" />
+  <Project Path="src/OpenClaw.TestPluginFixtures/OpenClaw.TestPluginFixtures.csproj" />
   <Project Path="src/OpenClaw.Tests/OpenClaw.Tests.csproj" />
 </Solution>

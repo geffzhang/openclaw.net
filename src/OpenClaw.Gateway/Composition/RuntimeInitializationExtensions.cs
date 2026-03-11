@@ -334,7 +334,8 @@ internal static class RuntimeInitializationExtensions
                 skills,
                 skillsConfig: config.Skills,
                 skillWorkspacePath: workspacePath,
-                logger: logger);
+                logger: logger,
+                recall: config.Memory.Recall);
         }
 
         IAgentRuntime agentRuntime = new AgentRuntime(
