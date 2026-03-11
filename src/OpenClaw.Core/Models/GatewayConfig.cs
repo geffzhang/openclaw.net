@@ -59,6 +59,12 @@ public sealed class LlmProviderConfig
 
     /// <summary>Seconds the circuit breaker stays open before probing.</summary>
     public int CircuitBreakerCooldownSeconds { get; set; } = 30;
+
+    /// <summary>
+    /// When true, use Microsoft Agent Framework's <c>ChatClientAgent</c> as the
+    /// LLM orchestration backend instead of the built-in agent loop.
+    /// </summary>
+    public bool UseMaf { get; set; } = false;
 }
 
 public sealed class MemoryConfig

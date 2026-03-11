@@ -310,6 +310,33 @@ internal static class RuntimeInitializationExtensions
         bool requireToolApproval,
         IReadOnlyList<string> approvalRequiredTools)
     {
+        // When UseMaf is enabled, delegate orchestration to Microsoft Agent Framework's
+        // ChatClientAgent instead of the built-in ReAct loop.
+        if (config.Llm.UseMaf)
+        {
+            logger.LogInformation("Using Microsoft Agent Framework (ChatClientAgent) as orchestration backend");
+
+            // Include DelegateTool if delegation is configured
+            if (config.Delegation.Enabled && config.Delegation.Profiles.Count > 0)
+            {
+                var delegateTool = new DelegateTool(
+                    chatClient, tools, memoryStore, config.Llm, config.Delegation,
+                    currentDepth: 0, metrics: runtimeMetrics, logger: logger, recall: config.Memory.Recall);
+                tools = [.. tools, delegateTool];
+            }
+
+            return new MafAgentRuntime(
+                chatClient,
+                tools,
+                memoryStore,
+                config.Llm,
+                config.Memory.MaxHistoryTurns,
+                skills,
+                skillsConfig: config.Skills,
+                skillWorkspacePath: workspacePath,
+                logger: logger);
+        }
+
         IAgentRuntime agentRuntime = new AgentRuntime(
             chatClient,
             tools,
@@ -335,7 +362,7 @@ internal static class RuntimeInitializationExtensions
         if (!config.Delegation.Enabled || config.Delegation.Profiles.Count == 0)
             return agentRuntime;
 
-        var delegateTool = new DelegateTool(
+        var outerDelegateTool = new DelegateTool(
             chatClient,
             tools,
             memoryStore,
@@ -346,7 +373,7 @@ internal static class RuntimeInitializationExtensions
             logger: logger,
             recall: config.Memory.Recall);
 
-        tools = [.. tools, delegateTool];
+        tools = [.. tools, outerDelegateTool];
         return new AgentRuntime(
             chatClient,
             tools,
