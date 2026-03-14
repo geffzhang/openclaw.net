@@ -22,6 +22,7 @@ public sealed class GatewayConfig
     public SkillsConfig Skills { get; set; } = new();
     public DelegationConfig Delegation { get; set; } = new();
     public CronConfig Cron { get; set; } = new();
+    public HeartbeatConfig Heartbeat { get; set; } = new();
     public WebhooksConfig Webhooks { get; set; } = new();
     public string UsageFooter { get; set; } = "off"; // "off", "tokens", "full"
 
@@ -337,4 +338,15 @@ public sealed class WebhookEndpointConfig
 
     /// <summary>Maximum webhook body length in characters before truncation. Limits prompt injection surface.</summary>
     public int MaxBodyLength { get; set; } = 10_240;
+}
+
+public sealed class HeartbeatConfig
+{
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>Seconds between heartbeat ticks. Minimum enforced value is 5.</summary>
+    public int IntervalSeconds { get; set; } = 30;
+
+    /// <summary>Log level for heartbeat tick messages: "Debug", "Information", etc.</summary>
+    public string LogLevel { get; set; } = "Debug";
 }

@@ -33,6 +33,8 @@ internal static class CoreServicesExtensions
         services.AddSingleton<MemoryRetentionSweeperService>();
         services.AddSingleton<IMemoryRetentionCoordinator>(sp => sp.GetRequiredService<MemoryRetentionSweeperService>());
         services.AddHostedService(sp => sp.GetRequiredService<MemoryRetentionSweeperService>());
+        services.AddSingleton<HeartbeatService>();
+        services.AddHostedService(sp => sp.GetRequiredService<HeartbeatService>());
         services.AddSingleton<MessagePipeline>();
         services.AddSingleton(new WebSocketChannel(config.WebSocket));
         services.AddSingleton<ChatCommandProcessor>();
