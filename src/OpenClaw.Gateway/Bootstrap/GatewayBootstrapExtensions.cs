@@ -20,9 +20,7 @@ internal static class GatewayBootstrapExtensions
         builder.Services.ConfigureHttpJsonOptions(opts =>
             opts.SerializerOptions.TypeInfoResolverChain.Add(CoreJsonContext.Default));
 
-        var config = builder.Configuration.GetSection("OpenClaw").Get<GatewayConfig>() ?? new GatewayConfig();
-        HydratePluginEntryConfigJson(config, builder.Configuration);
-        ApplyEnvironmentOverrides(config);
+        var config = LoadGatewayConfig(builder.Configuration);
 
         var isNonLoopbackBind = !GatewaySecurity.IsLoopbackBind(config.BindAddress);
         var isDoctorMode = args.Any(a => string.Equals(a, "--doctor", StringComparison.Ordinal));
@@ -116,6 +114,16 @@ internal static class GatewayBootstrapExtensions
                 WorkspacePath = Environment.GetEnvironmentVariable("OPENCLAW_WORKSPACE")
             }
         };
+    }
+
+    internal static GatewayConfig LoadGatewayConfig(IConfiguration configuration)
+    {
+        var openClawSection = configuration.GetSection("OpenClaw");
+        var config = openClawSection.Get<GatewayConfig>() ?? new GatewayConfig();
+        ApplyConfiguredToolingOverrides(openClawSection, config);
+        HydratePluginEntryConfigJson(config, configuration);
+        ApplyEnvironmentOverrides(config);
+        return config;
     }
 
     private static void ApplyConfigFileOverride(WebApplicationBuilder builder, string[] args)
@@ -250,6 +258,31 @@ internal static class GatewayBootstrapExtensions
         indexed.Sort(static (left, right) => left.Index.CompareTo(right.Index));
         orderedChildren = indexed.Select(item => item.Section).ToArray();
         return true;
+    }
+
+    private static void ApplyConfiguredToolingOverrides(IConfiguration section, GatewayConfig config)
+    {
+        var toolingSection = section.GetSection("Tooling");
+
+        var allowedReadRoots = ReadStringArray(toolingSection, "AllowedReadRoots");
+        if (allowedReadRoots is not null)
+            config.Tooling.AllowedReadRoots = allowedReadRoots;
+
+        var allowedWriteRoots = ReadStringArray(toolingSection, "AllowedWriteRoots");
+        if (allowedWriteRoots is not null)
+            config.Tooling.AllowedWriteRoots = allowedWriteRoots;
+    }
+
+    private static string[]? ReadStringArray(IConfiguration section, string key)
+    {
+        var values = section.GetSection(key)
+            .GetChildren()
+            .Select(child => child.Value)
+            .Where(value => value is not null)
+            .Cast<string>()
+            .ToArray();
+
+        return values.Length > 0 ? values : null;
     }
 
     private static string? ResolveSecretRefOrNull(string? value)
