@@ -17,6 +17,7 @@ public sealed class HeartbeatServiceTests
         };
         var service = new HeartbeatService(config, NullLogger<HeartbeatService>.Instance);
 
+        // Safety timeout in case the background task unexpectedly blocks.
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         await service.StartAsync(cts.Token);
         await Task.Delay(200);
@@ -28,17 +29,17 @@ public sealed class HeartbeatServiceTests
     [Fact]
     public async Task ExecuteAsync_WhenEnabled_TicksAtLeastOnce()
     {
+        // IntervalSeconds is set to 5, the minimum enforced by the service.
         var config = new GatewayConfig
         {
-            Heartbeat = new HeartbeatConfig { Enabled = true, IntervalSeconds = 1 }
+            Heartbeat = new HeartbeatConfig { Enabled = true, IntervalSeconds = 5 }
         };
         var service = new HeartbeatService(config, NullLogger<HeartbeatService>.Instance);
 
         using var cts = new CancellationTokenSource();
         await service.StartAsync(cts.Token);
 
-        // Wait enough for at least one tick (interval min is 5, but our config says 1 which gets clamped to 5)
-        // We use a 6-second wait to ensure at least one tick fires.
+        // Wait long enough for at least one tick (5s interval + margin).
         await Task.Delay(TimeSpan.FromSeconds(6));
         await cts.CancelAsync();
         await service.StopAsync(CancellationToken.None);
