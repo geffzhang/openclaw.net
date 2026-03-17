@@ -12,7 +12,7 @@ using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
 using OpenClaw.Core.Skills;
 
-namespace OpenClaw.MicrosoftAgentFrameworkAdapter;
+namespace OpenClaw.Agent;
 
 public sealed class MafAgentRuntime : IAgentRuntime
 {
@@ -39,6 +39,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
     private readonly long _sessionTokenBudget;
     private readonly MemoryRecallConfig? _recall;
     private readonly bool _requireToolApproval;
+    private readonly bool _persistSessionState;
     private readonly object _skillGate = new();
     private readonly IList<AITool> _mafTools;
     private string _systemPrompt = string.Empty;
@@ -52,7 +53,8 @@ public sealed class MafAgentRuntime : IAgentRuntime
         MafAgentFactory agentFactory,
         MafSessionStateStore sessionStateStore,
         MafTelemetryAdapter telemetry,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        bool persistSessionState = true)
     {
         _runtimeState = context.RuntimeState;
         _toolExecutor = new OpenClawToolExecutor(
@@ -83,6 +85,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
         _sessionTokenBudget = context.Config.SessionTokenBudget;
         _recall = context.Config.Memory.Recall;
         _requireToolApproval = context.RequireToolApproval;
+        _persistSessionState = persistSessionState;
         _chatClient = new MafExecutionServiceChatClient(
             context.LlmExecutionService,
             context.RuntimeMetrics,
@@ -156,7 +159,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
         }
 
         ChatClientAgent agent = CreateAgent();
-        AgentSession mafSession = await _sessionStateStore.LoadAsync(agent, session, ct);
+        AgentSession mafSession = await CreateOrLoadSessionAsync(agent, session, ct);
         var toolInvocations = new List<ToolInvocation>();
 
         session.History.Add(new ChatTurn { Role = "user", Content = userMessage });
@@ -205,7 +208,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
                 Content = text
             });
 
-            await _sessionStateStore.SaveAsync(agent, session, mafSession, ct);
+            await SaveSessionIfNeededAsync(agent, session, mafSession, ct);
 
             LogTurnComplete(turnCtx);
             return text;
@@ -257,7 +260,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
         }
 
         ChatClientAgent agent = CreateAgent();
-        AgentSession mafSession = await _sessionStateStore.LoadAsync(agent, session, ct);
+        AgentSession mafSession = await CreateOrLoadSessionAsync(agent, session, ct);
         var eventChannel = Channel.CreateBounded<AgentStreamEvent>(new BoundedChannelOptions(256)
         {
             SingleReader = true,
@@ -361,7 +364,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
                 Content = fullText.ToString()
             });
 
-            await _sessionStateStore.SaveAsync(agent, session, mafSession, ct);
+            await SaveSessionIfNeededAsync(agent, session, mafSession, ct);
 
             await writer.WriteAsync(AgentStreamEvent.Complete(), ct);
             LogTurnComplete(turnCtx);
@@ -407,6 +410,16 @@ public sealed class MafAgentRuntime : IAgentRuntime
                 ? ChatResponseFormat.ForJsonSchema(responseSchema.Value, "response")
                 : null
         };
+
+    private ValueTask<AgentSession> CreateOrLoadSessionAsync(ChatClientAgent agent, Session session, CancellationToken ct)
+        => _persistSessionState
+            ? _sessionStateStore.LoadAsync(agent, session, ct)
+            : agent.CreateSessionAsync(ct);
+
+    private Task SaveSessionIfNeededAsync(ChatClientAgent agent, Session session, AgentSession mafSession, CancellationToken ct)
+        => _persistSessionState
+            ? _sessionStateStore.SaveAsync(agent, session, mafSession, ct)
+            : Task.CompletedTask;
 
     private async ValueTask TryInjectRecallAsync(List<ChatMessage> messages, string userMessage, CancellationToken ct)
     {

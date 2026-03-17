@@ -3,7 +3,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace OpenClaw.MicrosoftAgentFrameworkAdapter;
+namespace OpenClaw.Agent;
 
 public sealed class MafAgentFactory
 {

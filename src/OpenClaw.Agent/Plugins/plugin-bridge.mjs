@@ -320,7 +320,7 @@ async function loadPlugin(entryPath) {
     }
 
     try {
-      const { default: createJiti } = await import(jitiPath);
+      const { default: createJiti } = await import(pathToFileURL(jitiPath).href);
       const jiti = createJiti(entryPath, { interopDefault: true });
       return jiti(entryPath);
     } catch (e) {

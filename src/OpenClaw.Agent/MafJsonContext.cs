@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace OpenClaw.MicrosoftAgentFrameworkAdapter;
+namespace OpenClaw.Agent;
 
 internal sealed class MafSessionEnvelope
 {

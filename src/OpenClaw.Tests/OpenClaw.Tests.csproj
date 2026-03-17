@@ -3,14 +3,12 @@
     <IsPackable>false</IsPackable>
     <OpenClawEnableMafExperiment Condition="'$(OpenClawEnableMafExperiment)' == ''">false</OpenClawEnableMafExperiment>
   </PropertyGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\OpenClaw.Core\OpenClaw.Core.csproj" />
     <ProjectReference Include="..\OpenClaw.Agent\OpenClaw.Agent.csproj" />
     <ProjectReference Include="..\OpenClaw.Channels\OpenClaw.Channels.csproj" />
     <ProjectReference Include="..\OpenClaw.Cli\OpenClaw.Cli.csproj" />
     <ProjectReference Include="..\OpenClaw.Gateway\OpenClaw.Gateway.csproj" />
-    <ProjectReference Include="..\OpenClaw.SemanticKernelAdapter\OpenClaw.SemanticKernelAdapter.csproj" />
     <ProjectReference Include="..\OpenClaw.PluginKit\OpenClaw.PluginKit.csproj" />
     <ProjectReference Include="..\OpenClaw.TestPluginFixtures\OpenClaw.TestPluginFixtures.csproj" />
   </ItemGroup>

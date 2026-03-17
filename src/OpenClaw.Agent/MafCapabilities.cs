@@ -1,6 +1,6 @@
 using OpenClaw.Core.Models;
 
-namespace OpenClaw.MicrosoftAgentFrameworkAdapter;
+namespace OpenClaw.Agent;
 
 public static class MafCapabilities
 {

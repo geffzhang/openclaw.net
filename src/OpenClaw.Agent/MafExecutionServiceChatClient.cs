@@ -1,12 +1,11 @@
+using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
+using OpenClaw.Core.Observability;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
-using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Logging;
-using OpenClaw.Agent;
-using OpenClaw.Core.Observability;
 
-namespace OpenClaw.MicrosoftAgentFrameworkAdapter;
+namespace OpenClaw.Agent;
 
 internal sealed class MafExecutionServiceChatClient : IChatClient
 {

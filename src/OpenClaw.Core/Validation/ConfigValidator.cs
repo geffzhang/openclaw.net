@@ -115,7 +115,7 @@ public static class ConfigValidator
             errors.Add("Runtime.Mode must be 'auto', 'aot', or 'jit'.");
 
         var runtimeOrchestrator = RuntimeOrchestrator.Normalize(config.Runtime.Orchestrator);
-        if (runtimeOrchestrator is not (RuntimeOrchestrator.Native or RuntimeOrchestrator.Maf))
+        if (runtimeOrchestrator is not RuntimeOrchestrator.Maf)
             errors.Add("Runtime.Orchestrator must be 'native' or 'maf'.");
 
         // Channels

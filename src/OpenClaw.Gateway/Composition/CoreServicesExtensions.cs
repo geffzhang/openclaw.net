@@ -52,7 +52,7 @@ internal static class CoreServicesExtensions
         services.AddSingleton(new WebSocketChannel(config.WebSocket));
         services.AddSingleton<ChatCommandProcessor>();
         services.AddSingleton<GatewayLlmExecutionService>();
-        services.AddSingleton<IAgentRuntimeFactory, NativeAgentRuntimeFactory>();
+        //services.AddSingleton<IAgentRuntimeFactory, NativeAgentRuntimeFactory>();
 
         return services;
     }

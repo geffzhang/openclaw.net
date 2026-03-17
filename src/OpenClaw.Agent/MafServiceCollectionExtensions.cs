@@ -1,13 +1,12 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using OpenClaw.Agent;
 
-namespace OpenClaw.MicrosoftAgentFrameworkAdapter;
+namespace OpenClaw.Agent;
 
 public static class MafServiceCollectionExtensions
 {
-    public static IServiceCollection AddMicrosoftAgentFrameworkExperiment(
+    public static IServiceCollection AddMicrosoftAgentFramework(
         this IServiceCollection services,
         IConfiguration configuration)
     {

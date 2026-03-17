@@ -152,9 +152,11 @@ public class SecurityTests
     public async Task PdfReadTool_EnforcesReadPathPolicy()
     {
         var config = new OpenClaw.Core.Plugins.PdfReadConfig { Enabled = true };
+        var allowedRoot = Path.Combine(Path.GetTempPath(), "openclaw-tests", Guid.NewGuid().ToString("n"), "allowed");
+        Directory.CreateDirectory(allowedRoot);
         var toolingConfig = new OpenClaw.Core.Models.ToolingConfig
         {
-            AllowedReadRoots = ["/allowed-only"]
+            AllowedReadRoots = [allowedRoot]
         };
         var tool = new OpenClaw.Agent.Tools.PdfReadTool(config, toolingConfig);
 
@@ -164,11 +166,12 @@ public class SecurityTests
 
         try
         {
-            var result = await tool.ExecuteAsync($$"""{"path":"{{tmpFile}}"}""", CancellationToken.None);
+            var result = await tool.ExecuteAsync(System.Text.Json.JsonSerializer.Serialize(new { path = tmpFile }), CancellationToken.None);
             Assert.Contains("Read access denied", result);
         }
         finally
         {
+            Directory.Delete(Path.GetDirectoryName(allowedRoot)!, recursive: true);
             File.Delete(tmpFile);
         }
     }

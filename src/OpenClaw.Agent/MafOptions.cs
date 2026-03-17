@@ -1,4 +1,4 @@
-namespace OpenClaw.MicrosoftAgentFrameworkAdapter;
+namespace OpenClaw.Agent;
 
 public sealed class MafOptions
 {
@@ -9,7 +9,7 @@ public sealed class MafOptions
     public string AgentDescription { get; set; } =
         "Microsoft Agent Framework orchestration backend for OpenClaw.";
 
-    public string SessionSidecarPath { get; set; } = "experiments/maf/sessions";
+    public string SessionSidecarPath { get; set; } = "sessions";
 
     public bool EnableStreaming { get; set; } = true;
 

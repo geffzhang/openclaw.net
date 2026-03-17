@@ -2,7 +2,7 @@ using System.Diagnostics;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
 
-namespace OpenClaw.MicrosoftAgentFrameworkAdapter;
+namespace OpenClaw.Agent;
 
 public sealed class MafTelemetryAdapter
 {

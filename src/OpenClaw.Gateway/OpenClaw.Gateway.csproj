@@ -26,9 +26,7 @@
     <ProjectReference Include="..\OpenClaw.Agent\OpenClaw.Agent.csproj" />
     <ProjectReference Include="..\OpenClaw.Channels\OpenClaw.Channels.csproj" />
   </ItemGroup>
-  <ItemGroup Condition="'$(OpenClawEnableMafExperiment)' == 'true'">
-    <ProjectReference Include="..\OpenClaw.MicrosoftAgentFrameworkAdapter\OpenClaw.MicrosoftAgentFrameworkAdapter.csproj" />
-  </ItemGroup>
+
   <PropertyGroup Condition="'$(OpenClawEnableMafExperiment)' == 'true'">
     <DefineConstants>$(DefineConstants);OPENCLAW_ENABLE_MAF_EXPERIMENT</DefineConstants>
   </PropertyGroup>
@@ -39,7 +37,6 @@
     <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.15.0" />
     <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.0" />
   </ItemGroup>
-
   <ItemGroup>
     <Content Include="skills\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

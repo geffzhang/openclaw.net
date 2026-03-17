@@ -24,7 +24,7 @@ public sealed class SessionAdminStoreTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            DeleteDirectoryWithRetries(root);
         }
     }
 
@@ -35,18 +35,20 @@ public sealed class SessionAdminStoreTests
         try
         {
             var dbPath = Path.Combine(root, "openclaw.db");
-            using var store = new SqliteMemoryStore(dbPath, enableFts: false);
-            await SeedSessionsAsync(store);
+            using (var store = new SqliteMemoryStore(dbPath, enableFts: false))
+            {
+                await SeedSessionsAsync(store);
 
-            var page = await ((ISessionAdminStore)store).ListSessionsAsync(page: 1, pageSize: 1, new SessionListQuery(), CancellationToken.None);
+                var page = await ((ISessionAdminStore)store).ListSessionsAsync(page: 1, pageSize: 1, new SessionListQuery(), CancellationToken.None);
 
-            Assert.Single(page.Items);
-            Assert.True(page.HasMore);
-            Assert.Equal("session-2", page.Items[0].Id);
+                Assert.Single(page.Items);
+                Assert.True(page.HasMore);
+                Assert.Equal("session-2", page.Items[0].Id);
+            }
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            DeleteDirectoryWithRetries(root);
         }
     }
 
@@ -70,7 +72,7 @@ public sealed class SessionAdminStoreTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            DeleteDirectoryWithRetries(root);
         }
     }
 
@@ -81,22 +83,24 @@ public sealed class SessionAdminStoreTests
         try
         {
             var dbPath = Path.Combine(root, "openclaw.db");
-            using var store = new SqliteMemoryStore(dbPath, enableFts: false);
-            await SeedSessionsAsync(store);
+            using (var store = new SqliteMemoryStore(dbPath, enableFts: false))
+            {
+                await SeedSessionsAsync(store);
 
-            var page = await ((ISessionAdminStore)store).ListSessionsAsync(
-                page: 1,
-                pageSize: 1,
-                new SessionListQuery { Search = "sms" },
-                CancellationToken.None);
+                var page = await ((ISessionAdminStore)store).ListSessionsAsync(
+                    page: 1,
+                    pageSize: 1,
+                    new SessionListQuery { Search = "sms" },
+                    CancellationToken.None);
 
-            Assert.Single(page.Items);
-            Assert.False(page.HasMore);
-            Assert.Equal("session-3", page.Items[0].Id);
+                Assert.Single(page.Items);
+                Assert.False(page.HasMore);
+                Assert.Equal("session-3", page.Items[0].Id);
+            }
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            DeleteDirectoryWithRetries(root);
         }
     }
 
@@ -107,21 +111,23 @@ public sealed class SessionAdminStoreTests
         try
         {
             var dbPath = Path.Combine(root, "openclaw.db");
-            using var store = new SqliteMemoryStore(dbPath, enableFts: false);
-            await SeedSessionsAsync(store);
+            using (var store = new SqliteMemoryStore(dbPath, enableFts: false))
+            {
+                await SeedSessionsAsync(store);
 
-            var page = await ((ISessionAdminStore)store).ListSessionsAsync(
-                page: 1,
-                pageSize: 10,
-                new SessionListQuery { State = SessionState.Paused },
-                CancellationToken.None);
+                var page = await ((ISessionAdminStore)store).ListSessionsAsync(
+                    page: 1,
+                    pageSize: 10,
+                    new SessionListQuery { State = SessionState.Paused },
+                    CancellationToken.None);
 
-            Assert.Single(page.Items);
-            Assert.Equal("session-3", page.Items[0].Id);
+                Assert.Single(page.Items);
+                Assert.Equal("session-3", page.Items[0].Id);
+            }
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            DeleteDirectoryWithRetries(root);
         }
     }
 
@@ -158,5 +164,40 @@ public sealed class SessionAdminStoreTests
         var path = Path.Combine(Path.GetTempPath(), "openclaw-tests", Guid.NewGuid().ToString("n"));
         Directory.CreateDirectory(path);
         return path;
+    }
+
+    private static void DeleteDirectoryWithRetries(string path)
+    {
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            try
+            {
+                if (Directory.Exists(path))
+                    Directory.Delete(path, recursive: true);
+                return;
+            }
+            catch (IOException)
+            {
+                if (attempt >= 4)
+                    break;
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                Thread.Sleep(50);
+            }
+        }
+
+        try
+        {
+            if (Directory.Exists(path))
+            {
+                foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
+                {
+                    try { File.Delete(file); } catch { }
+                }
+            }
+        }
+        catch
+        {
+        }
     }
 }

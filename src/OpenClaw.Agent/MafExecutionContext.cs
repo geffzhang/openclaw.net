@@ -1,8 +1,7 @@
-using OpenClaw.Agent;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
 
-namespace OpenClaw.MicrosoftAgentFrameworkAdapter;
+namespace OpenClaw.Agent;
 
 internal sealed class MafExecutionContext
 {

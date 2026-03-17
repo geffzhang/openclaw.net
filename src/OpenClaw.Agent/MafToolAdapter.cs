@@ -4,7 +4,7 @@ using OpenClaw.Agent;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
 
-namespace OpenClaw.MicrosoftAgentFrameworkAdapter;
+namespace OpenClaw.Agent;
 
 public sealed class MafToolAdapter : AIFunction
 {

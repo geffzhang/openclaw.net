@@ -281,7 +281,7 @@ public sealed class GatewayAdminEndpointTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var payload = await ReadJsonAsync(response);
         Assert.Equal(
-            OpenClaw.Core.Models.RuntimeOrchestrator.Native,
+            OpenClaw.Core.Models.RuntimeOrchestrator.Maf,
             payload.RootElement.GetProperty("runtime").GetProperty("orchestrator").GetString());
     }
 
@@ -500,7 +500,7 @@ public sealed class GatewayAdminEndpointTests
         return new GatewayAppRuntime
         {
             AgentRuntime = agentRuntime,
-            OrchestratorId = RuntimeOrchestrator.Native,
+            OrchestratorId = RuntimeOrchestrator.Maf,
             Pipeline = pipeline,
             MiddlewarePipeline = middleware,
             WebSocketChannel = wsChannel,

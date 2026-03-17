@@ -1,3 +1,4 @@
+using System.Text.Json;
 using OpenClaw.Agent.Tools;
 using OpenClaw.Core.Models;
 using Xunit;
@@ -18,7 +19,7 @@ public sealed class FileReadToolTests
             AllowedReadRoots = [path]
         });
 
-        var output = await tool.ExecuteAsync($$"""{"path":"{{path}}"}""", CancellationToken.None);
+        var output = await tool.ExecuteAsync(JsonSerializer.Serialize(new { path }), CancellationToken.None);
         Assert.Equal("hello", output);
     }
 
@@ -34,7 +35,7 @@ public sealed class FileReadToolTests
             AllowedReadRoots = [root]
         });
 
-        var output = await tool.ExecuteAsync($$"""{"path":"{{path}}","max_lines":-5}""", CancellationToken.None);
+        var output = await tool.ExecuteAsync(JsonSerializer.Serialize(new { path, max_lines = -5 }), CancellationToken.None);
         Assert.StartsWith("line1", output, StringComparison.Ordinal);
     }
 
