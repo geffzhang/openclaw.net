@@ -11,6 +11,7 @@
     <ProjectReference Include="..\OpenClaw.Gateway\OpenClaw.Gateway.csproj" />
     <ProjectReference Include="..\OpenClaw.PluginKit\OpenClaw.PluginKit.csproj" />
     <ProjectReference Include="..\OpenClaw.TestPluginFixtures\OpenClaw.TestPluginFixtures.csproj" />
+    <ProjectReference Include="..\OpenClawNet.Sandbox.OpenSandbox\OpenClawNet.Sandbox.OpenSandbox.csproj" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(OpenClawEnableMafExperiment)' == 'true'">

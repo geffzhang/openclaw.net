@@ -25,6 +25,7 @@
     <ProjectReference Include="..\OpenClaw.Core\OpenClaw.Core.csproj" />
     <ProjectReference Include="..\OpenClaw.Agent\OpenClaw.Agent.csproj" />
     <ProjectReference Include="..\OpenClaw.Channels\OpenClaw.Channels.csproj" />
+    <ProjectReference Include="..\OpenClawNet.Sandbox.OpenSandbox\OpenClawNet.Sandbox.OpenSandbox.csproj" />
   </ItemGroup>
 
   <PropertyGroup Condition="'$(OpenClawEnableMafExperiment)' == 'true'">
@@ -37,6 +38,9 @@
     <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.15.0" />
     <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.0" />
   </ItemGroup>
+  <PropertyGroup Condition="'$(OpenClawEnableOpenSandbox)' == 'true'">
+    <DefineConstants>$(DefineConstants);OPENCLAW_ENABLE_OPENSANDBOX</DefineConstants>
+  </PropertyGroup>
   <ItemGroup>
     <Content Include="skills\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

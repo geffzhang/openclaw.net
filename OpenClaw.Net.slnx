@@ -15,4 +15,5 @@
   <Project Path="src/OpenClaw.PluginKit/OpenClaw.PluginKit.csproj" />
   <Project Path="src/OpenClaw.TestPluginFixtures/OpenClaw.TestPluginFixtures.csproj" />
   <Project Path="src/OpenClaw.Tests/OpenClaw.Tests.csproj" />
+  <Project Path="src/OpenClawNet.Sandbox.OpenSandbox/OpenClawNet.Sandbox.OpenSandbox.csproj" />
 </Solution>

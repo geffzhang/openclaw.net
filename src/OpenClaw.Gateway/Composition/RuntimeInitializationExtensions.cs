@@ -55,6 +55,7 @@ internal static class RuntimeInitializationExtensions
         var sessionMetadataStore = app.Services.GetRequiredService<SessionMetadataStore>();
         var pluginHealth = app.Services.GetRequiredService<PluginHealthService>();
         var memoryStore = app.Services.GetRequiredService<IMemoryStore>();
+        var toolSandbox = app.Services.GetService<IToolSandbox>();
         var pipeline = app.Services.GetRequiredService<MessagePipeline>();
         var wsChannel = app.Services.GetRequiredService<WebSocketChannel>();
         var nativeRegistry = app.Services.GetRequiredService<NativePluginRegistry>();
@@ -98,7 +99,13 @@ internal static class RuntimeInitializationExtensions
             config.Memory.StoragePath,
             loggerFactory.CreateLogger<CronChannel>());
 
-        var builtInTools = CreateBuiltInTools(config, memoryStore, sessionManager, pipeline, startup.WorkspacePath);
+        var builtInTools = CreateBuiltInTools(
+            config,
+            startup.RuntimeState,
+            memoryStore,
+            sessionManager,
+            pipeline,
+            startup.WorkspacePath);
         LlmClientFactory.ResetDynamicProviders();
         try
         {
@@ -195,7 +202,8 @@ internal static class RuntimeInitializationExtensions
             startup.WorkspacePath,
             combinedPluginSkillRoots,
             effectiveRequireToolApproval,
-            effectiveApprovalRequiredTools);
+            effectiveApprovalRequiredTools,
+            toolSandbox);
 
         var middlewarePipeline = CreateMiddlewarePipeline(config, loggerFactory);
         var skillWatcher = new SkillWatcherService(
@@ -269,6 +277,7 @@ internal static class RuntimeInitializationExtensions
 
     private static IReadOnlyList<ITool> CreateBuiltInTools(
         GatewayConfig config,
+        GatewayRuntimeState runtimeState,
         IMemoryStore memoryStore,
         SessionManager sessionManager,
         MessagePipeline pipeline,
@@ -358,7 +367,8 @@ internal static class RuntimeInitializationExtensions
         string? workspacePath,
         IReadOnlyList<string> pluginSkillDirs,
         bool requireToolApproval,
-        IReadOnlyList<string> approvalRequiredTools)
+        IReadOnlyList<string> approvalRequiredTools,
+        IToolSandbox? toolSandbox)
     {
         var factory = AgentRuntimeFactorySelector.Select(
             services.GetServices<IAgentRuntimeFactory>(),
@@ -382,7 +392,8 @@ internal static class RuntimeInitializationExtensions
             Logger = logger,
             Hooks = hooks,
             RequireToolApproval = requireToolApproval,
-            ApprovalRequiredTools = approvalRequiredTools
+            ApprovalRequiredTools = approvalRequiredTools,
+            ToolSandbox = toolSandbox
         });
     }
 

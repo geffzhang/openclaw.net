@@ -17,7 +17,8 @@ public static class PluginCapabilityPolicy
     {
         Tools,
         Services,
-        Skills
+        Skills,
+        Hooks
     };
 
     public static string[] Normalize(IEnumerable<string> capabilities)

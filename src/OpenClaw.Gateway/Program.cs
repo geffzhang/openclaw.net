@@ -4,7 +4,9 @@ using OpenClaw.Gateway.Endpoints;
 using OpenClaw.Gateway.Pipeline;
 using OpenClaw.Gateway.Profiles;
 using OpenClaw.Agent;
-
+#if OPENCLAW_ENABLE_OPENSANDBOX
+using OpenClawNet.Sandbox.OpenSandbox;
+#endif
 
 var builder = WebApplication.CreateSlimBuilder(args);
 
@@ -25,6 +27,9 @@ builder.Services.AddOpenClawToolServices(startup);
 builder.Services.AddOpenClawSecurityServices(startup);
 builder.Services.ApplyOpenClawRuntimeProfile(startup);
 builder.Services.AddMicrosoftAgentFramework(builder.Configuration);
+#if OPENCLAW_ENABLE_OPENSANDBOX
+builder.Services.AddOpenSandboxIntegration(builder.Configuration);
+#endif
 
 var app = builder.Build();
 var runtime = await app.InitializeOpenClawRuntimeAsync(startup);
