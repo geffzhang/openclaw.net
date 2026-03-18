@@ -18,7 +18,7 @@ internal static class PipelineExtensions
     {
         ConfigureForwardedHeaders(app, startup);
         ConfigureCors(app, runtime);
-
+        app.UseStaticFiles();
         app.UseWebSockets(new WebSocketOptions
         {
             KeepAliveInterval = TimeSpan.FromSeconds(30)
