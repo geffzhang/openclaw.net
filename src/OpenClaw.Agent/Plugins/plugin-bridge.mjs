@@ -320,7 +320,7 @@ async function loadPlugin(entryPath) {
     }
 
     try {
-      const { default: createJiti } = await import(jitiPath);
+      const { default: createJiti } = await import(pathToFileURL(jitiPath).href);
       const jiti = createJiti(entryPath, { interopDefault: true });
       return jiti(entryPath);
     } catch (e) {
@@ -342,7 +342,20 @@ async function loadPlugin(entryPath) {
 
   const url = pathToFileURL(entryPath).href;
   const mod = await import(url);
-  return mod.default ?? mod;
+  return mod;
+}
+
+function resolvePluginExport(pluginExport) {
+  if (!pluginExport) return null;
+  if (typeof pluginExport === "function") return pluginExport;
+  if (typeof pluginExport.register === "function") return pluginExport;
+
+  const candidate = pluginExport.default;
+  if (!candidate) return pluginExport;
+  if (typeof candidate === "function") return candidate;
+  if (typeof candidate.register === "function") return candidate;
+
+  return pluginExport;
 }
 
 function findJiti(entryPath) {
@@ -389,7 +402,7 @@ async function handleRequest(req) {
       resetState();
 
       try {
-        const pluginExport = await loadPlugin(entryPath);
+        const pluginExport = resolvePluginExport(await loadPlugin(entryPath));
         const api = createPluginApi(pluginId, config, logger);
 
         if (typeof pluginExport === "function") {
