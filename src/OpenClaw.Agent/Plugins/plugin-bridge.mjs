@@ -12,7 +12,7 @@ import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
 import { existsSync } from "node:fs";
 import { createConnection } from "node:net";
-import { join, dirname } from "node:path";
+import { join, dirname, isAbsolute } from "node:path";
 
 console.log = console.error;
 console.info = console.error;
@@ -309,6 +309,7 @@ function createLogger(pluginId) {
 }
 
 async function loadPlugin(entryPath) {
+  const entrySpecifier = normalizeModuleSpecifier(entryPath);
   const ext = entryPath.split(".").pop()?.toLowerCase();
 
   if (ext === "ts") {
@@ -322,7 +323,7 @@ async function loadPlugin(entryPath) {
     try {
       const { default: createJiti } = await import(pathToFileURL(jitiPath).href);
       const jiti = createJiti(entryPath, { interopDefault: true });
-      return jiti(entryPath);
+      return jiti(entrySpecifier);
     } catch (e) {
       throw new Error(
         `Failed to load TypeScript plugin "${entryPath}" via jiti: ${e?.message ?? "unknown error"}. Ensure 'jiti' is installed and the plugin is valid.`
@@ -343,6 +344,15 @@ async function loadPlugin(entryPath) {
   const url = pathToFileURL(entryPath).href;
   const mod = await import(url);
   return mod;
+}
+
+function normalizeModuleSpecifier(modulePath) {
+  if (typeof modulePath !== "string") return modulePath;
+  if (isAbsolute(modulePath)) {
+    return pathToFileURL(modulePath).href;
+  }
+
+  return modulePath;
 }
 
 function resolvePluginExport(pluginExport) {
