@@ -19,6 +19,8 @@ internal static class PipelineExtensions
         ConfigureForwardedHeaders(app, startup);
         ConfigureCors(app, runtime);
 
+        app.UseStaticFiles();
+
         app.UseWebSockets(new WebSocketOptions
         {
             KeepAliveInterval = TimeSpan.FromSeconds(30)
@@ -101,8 +103,10 @@ internal static class PipelineExtensions
             startup.Config,
             runtime.CronTask,
             runtime.ToolApprovalService,
+            runtime.ApprovalAuditStore,
             runtime.PairingManager,
-            runtime.CommandProcessor);
+            runtime.CommandProcessor,
+            runtime.Operations);
     }
 
     private static void StartChannels(WebApplication app, GatewayAppRuntime runtime)
@@ -194,6 +198,11 @@ internal static class PipelineExtensions
 
             DisposePluginHostWithTimeout(runtime.PluginHost, pluginDisposeTimeout, app.Logger);
             DisposePluginHostWithTimeout(runtime.NativeDynamicPluginHost, pluginDisposeTimeout, app.Logger);
+            foreach (var ownerId in runtime.DynamicProviderOwners)
+            {
+                runtime.Operations.ProviderRegistry.UnregisterOwnedBy(ownerId);
+                LlmClientFactory.UnregisterProvidersOwnedBy(ownerId);
+            }
             runtime.NativeRegistry.Dispose();
             runtime.SkillWatcher.Dispose();
             drainCompleteEvent.Dispose();
