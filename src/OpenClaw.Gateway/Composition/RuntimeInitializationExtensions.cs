@@ -57,6 +57,7 @@ internal static class RuntimeInitializationExtensions
         var pluginHealth = app.Services.GetRequiredService<PluginHealthService>();
         var memoryStore = app.Services.GetRequiredService<IMemoryStore>();
         var cronJobSource = app.Services.GetRequiredService<ICronJobSource>();
+        var contractGovernance = app.Services.GetRequiredService<ContractGovernanceService>();
         var toolSandbox = app.Services.GetService<IToolSandbox>();
         var pipeline = app.Services.GetRequiredService<MessagePipeline>();
         var wsChannel = app.Services.GetRequiredService<WebSocketChannel>();
@@ -176,7 +177,7 @@ internal static class RuntimeInitializationExtensions
         if (skills.Count > 0)
             skillLogger.LogInformation("{Summary}", SkillPromptBuilder.BuildSummary(skills));
 
-        var hooks = CreateHooks(config, loggerFactory, pluginHost, nativeDynamicPluginHost);
+        var hooks = CreateHooks(config, loggerFactory, pluginHost, nativeDynamicPluginHost, sessionManager, contractGovernance);
         var (effectiveRequireToolApproval, effectiveApprovalRequiredTools) = ResolveApprovalMode(config);
 
         var agentLogger = loggerFactory.CreateLogger("AgentRuntime");
@@ -201,7 +202,7 @@ internal static class RuntimeInitializationExtensions
             effectiveApprovalRequiredTools,
             toolSandbox);
 
-        var middlewarePipeline = CreateMiddlewarePipeline(config, loggerFactory);
+        var middlewarePipeline = CreateMiddlewarePipeline(config, loggerFactory, contractGovernance, sessionManager);
         var skillWatcher = new SkillWatcherService(
             config.Skills,
             startup.WorkspacePath,
@@ -309,12 +310,31 @@ internal static class RuntimeInitializationExtensions
         GatewayConfig config,
         ILoggerFactory loggerFactory,
         PluginHost? pluginHost,
-        NativeDynamicPluginHost? nativeDynamicPluginHost)
+        NativeDynamicPluginHost? nativeDynamicPluginHost,
+        SessionManager sessionManager,
+        ContractGovernanceService contractGovernance)
     {
         var hooks = new List<IToolHook>
         {
             new AuditLogHook(loggerFactory.CreateLogger("AuditLog")),
-            new AutonomyHook(config.Tooling, loggerFactory.CreateLogger("AutonomyHook"))
+            new AutonomyHook(config.Tooling, loggerFactory.CreateLogger("AutonomyHook")),
+            new ContractScopeHook(
+                sessionId =>
+                {
+                    var session = sessionManager.TryGetActiveById(sessionId);
+                    return session?.ContractPolicy;
+                },
+                sessionId =>
+                {
+                    // Approximate tool call count from provider usage turns as a proxy
+                    // The actual count is tracked on the session's TurnContext at runtime
+                    var session = sessionManager.TryGetActiveById(sessionId);
+                    if (session is null) return 0;
+                    return session.History
+                        .Where(t => t.ToolCalls is { Count: > 0 })
+                        .Sum(t => t.ToolCalls!.Count);
+                },
+                loggerFactory.CreateLogger("ContractScopeHook"))
         };
 
         if (pluginHost is not null)
@@ -391,17 +411,28 @@ internal static class RuntimeInitializationExtensions
             Hooks = hooks,
             RequireToolApproval = requireToolApproval,
             ApprovalRequiredTools = approvalRequiredTools,
-            ToolSandbox = toolSandbox
+            ToolSandbox = toolSandbox,
+            ToolUsageTracker = services.GetRequiredService<ToolUsageTracker>()
         });
     }
 
-    private static MiddlewarePipeline CreateMiddlewarePipeline(GatewayConfig config, ILoggerFactory loggerFactory)
+    private static MiddlewarePipeline CreateMiddlewarePipeline(
+        GatewayConfig config,
+        ILoggerFactory loggerFactory,
+        ContractGovernanceService contractGovernance,
+        SessionManager sessionManager)
     {
         var middlewareList = new List<IMessageMiddleware>();
         if (config.SessionRateLimitPerMinute > 0)
             middlewareList.Add(new RateLimitMiddleware(config.SessionRateLimitPerMinute, loggerFactory.CreateLogger("RateLimit")));
-        if (config.SessionTokenBudget > 0)
-            middlewareList.Add(new TokenBudgetMiddleware(config.SessionTokenBudget, loggerFactory.CreateLogger("TokenBudget")));
+
+        Func<string, string, (decimal, decimal, bool)> costChecker =
+            (channelId, senderId) => contractGovernance.CheckCostBudget(channelId, senderId, sessionManager);
+
+        middlewareList.Add(new TokenBudgetMiddleware(
+            config.SessionTokenBudget,
+            loggerFactory.CreateLogger("TokenBudget"),
+            costChecker: costChecker));
 
         return new MiddlewarePipeline(middlewareList);
     }

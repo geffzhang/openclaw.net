@@ -977,6 +977,26 @@ public sealed class GatewayAdminEndpointTests
             AdminSettingsService.CreateSnapshot(config),
             AdminSettingsService.GetSettingsPath(config),
             NullLogger<AdminSettingsService>.Instance));
+        builder.Services.AddSingleton(new ProviderUsageTracker());
+        builder.Services.AddSingleton(new ToolUsageTracker());
+        builder.Services.AddSingleton(new RuntimeEventStore(storagePath, NullLogger<RuntimeEventStore>.Instance));
+        builder.Services.AddSingleton(new ContractStore(storagePath, NullLogger<ContractStore>.Instance));
+        builder.Services.AddSingleton(sp =>
+        {
+            var contractStartup = new GatewayStartupContext
+            {
+                Config = config,
+                RuntimeState = RuntimeModeResolver.Resolve(config.Runtime),
+                IsNonLoopbackBind = nonLoopbackBind,
+                WorkspacePath = null
+            };
+            return new ContractGovernanceService(
+                contractStartup,
+                sp.GetRequiredService<ContractStore>(),
+                sp.GetRequiredService<RuntimeEventStore>(),
+                sp.GetRequiredService<ProviderUsageTracker>(),
+                NullLogger<ContractGovernanceService>.Instance);
+        });
 
         var app = builder.Build();
         var runtime = CreateRuntime(config, storagePath, memoryStore, sessionManager, heartbeatService);

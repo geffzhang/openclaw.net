@@ -29,6 +29,9 @@ public sealed class Session
 
     /// <summary>Total output tokens consumed across all turns in this session.</summary>
     public long TotalOutputTokens { get; set; }
+
+    /// <summary>Optional contract policy governing this session's execution limits.</summary>
+    public ContractPolicy? ContractPolicy { get; set; }
 }
 
 public enum SessionState : byte
@@ -364,6 +367,19 @@ public sealed record ToolInvocation
 [JsonSerializable(typeof(RetentionSweepResponse))]
 [JsonSerializable(typeof(RetentionSweepErrorResponse))]
 [JsonSerializable(typeof(BranchRestoreResponse))]
+[JsonSerializable(typeof(ContractPolicy))]
+[JsonSerializable(typeof(ScopedCapability))]
+[JsonSerializable(typeof(ScopedCapability[]))]
+[JsonSerializable(typeof(ContractValidationResult))]
+[JsonSerializable(typeof(ContractExecutionSnapshot))]
+[JsonSerializable(typeof(ContractCreateRequest))]
+[JsonSerializable(typeof(ContractCreateResponse))]
+[JsonSerializable(typeof(ContractValidateRequest))]
+[JsonSerializable(typeof(ContractStatusResponse))]
+[JsonSerializable(typeof(ContractListResponse))]
+[JsonSerializable(typeof(Dictionary<string, decimal>))]
+[JsonSerializable(typeof(ToolUsageSnapshot))]
+[JsonSerializable(typeof(List<ToolUsageSnapshot>))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
