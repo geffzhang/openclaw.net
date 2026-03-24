@@ -67,6 +67,59 @@ public static class ConfigValidator
         if (config.SessionTimeoutMinutes < 1)
             errors.Add($"SessionTimeoutMinutes must be >= 1 (got {config.SessionTimeoutMinutes}).");
 
+        var jwt = config.Security.Jwt;
+        if (jwt.Enabled)
+        {
+            var hasAuthority = !string.IsNullOrWhiteSpace(jwt.Authority);
+            var hasMetadataAddress = !string.IsNullOrWhiteSpace(jwt.MetadataAddress);
+            var hasSigningKey = !string.IsNullOrWhiteSpace(SecretResolver.Resolve(jwt.SigningKeyRef));
+            var hasAudience = !string.IsNullOrWhiteSpace(jwt.Audience) || jwt.ValidAudiences.Length > 0;
+            var hasIssuer = !string.IsNullOrWhiteSpace(jwt.ValidIssuer) || jwt.ValidIssuers.Length > 0;
+
+            if (!hasAuthority && !hasMetadataAddress && !hasSigningKey)
+            {
+                errors.Add(
+                    "Security.Jwt.Enabled is true but no Authority, MetadataAddress, or SigningKeyRef is configured.");
+            }
+
+            if (!hasAudience)
+                errors.Add("Security.Jwt.Enabled is true but no Audience or ValidAudiences are configured.");
+
+            if (!hasAuthority && !hasMetadataAddress && !hasIssuer)
+            {
+                errors.Add(
+                    "Security.Jwt.Enabled is true but no ValidIssuer or ValidIssuers are configured for offline JWT validation.");
+            }
+
+            if (hasAuthority && !Uri.TryCreate(jwt.Authority, UriKind.Absolute, out _))
+                errors.Add("Security.Jwt.Authority must be an absolute URI when set.");
+
+            if (hasMetadataAddress && !Uri.TryCreate(jwt.MetadataAddress, UriKind.Absolute, out _))
+                errors.Add("Security.Jwt.MetadataAddress must be an absolute URI when set.");
+        }
+
+        var toolAuthorization = config.Security.ToolAuthorization;
+        if (!string.Equals(toolAuthorization.DefaultPolicy, "allow", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(toolAuthorization.DefaultPolicy, "deny", StringComparison.OrdinalIgnoreCase))
+        {
+            errors.Add("Security.ToolAuthorization.DefaultPolicy must be 'allow' or 'deny'.");
+        }
+
+        if (toolAuthorization.Enabled)
+        {
+            foreach (var rule in toolAuthorization.Rules)
+            {
+                if (string.IsNullOrWhiteSpace(rule.Tool))
+                    errors.Add("Security.ToolAuthorization.Rules entries must define Tool.");
+
+                if (rule.AllowedScopes.Length == 0 && rule.AllowedRoles.Length == 0)
+                {
+                    errors.Add(
+                        $"Security.ToolAuthorization rule '{rule.Tool}' must define at least one AllowedScopes or AllowedRoles entry.");
+                }
+            }
+        }
+
         // WebSocket
         if (config.WebSocket.MaxMessageBytes < 256)
             errors.Add($"WebSocket.MaxMessageBytes must be >= 256 (got {config.WebSocket.MaxMessageBytes}).");

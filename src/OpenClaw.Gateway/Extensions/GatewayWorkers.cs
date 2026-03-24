@@ -342,6 +342,9 @@ internal static class GatewayWorkers
                             if (session is null)
                                 throw new InvalidOperationException("Session manager returned null session.");
 
+                            if (msg.AuthContext is not null)
+                                session.AuthContext = msg.AuthContext;
+
                             initialInputTokens = session.TotalInputTokens;
                             initialOutputTokens = session.TotalOutputTokens;
 

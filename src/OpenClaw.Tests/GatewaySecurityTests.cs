@@ -1,5 +1,7 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using OpenClaw.Gateway;
+using OpenClaw.Core.Models;
 using Xunit;
 
 namespace OpenClaw.Tests;
@@ -60,5 +62,25 @@ public sealed class GatewaySecurityTests
     public void IsHmacSha256SignatureValid_RejectsInvalidSignature()
     {
         Assert.False(GatewaySecurity.IsHmacSha256SignatureValid("test-secret", "{\"ok\":true}", "sha256=deadbeef"));
+    }
+
+    [Fact]
+    public void CreateSessionAuthContext_ExtractsScopesAndKeycloakRoles()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("sub", "alice"),
+            new Claim("scope", "openid profile tools.read tools.shell"),
+            new Claim("realm_access", "{\"roles\":[\"gateway-admin\",\"tool-operator\"]}"),
+            new Claim("resource_access", "{\"openclaw-web\":{\"roles\":[\"chat-user\"]}}")
+        ], "Bearer"));
+
+        var context = GatewaySecurity.CreateSessionAuthContext(principal, new SecurityConfig());
+
+        Assert.NotNull(context);
+        Assert.Equal("alice", context.Subject);
+        Assert.Contains("tools.shell", context.Scopes);
+        Assert.Contains("gateway-admin", context.Roles);
+        Assert.Contains("chat-user", context.Roles);
     }
 }

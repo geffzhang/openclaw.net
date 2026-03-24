@@ -36,9 +36,13 @@ internal static class GatewayBootstrapExtensions
             };
         }
 
-        if (isNonLoopbackBind && string.IsNullOrWhiteSpace(config.AuthToken))
+        if (isNonLoopbackBind &&
+            !GatewaySecurity.IsJwtAuthenticationEnabled(config.Security) &&
+            string.IsNullOrWhiteSpace(config.AuthToken))
         {
-            var message = "OPENCLAW_AUTH_TOKEN must be set when binding to a non-loopback address.";
+            var message =
+                "Authentication must be configured when binding to a non-loopback address. " +
+                "Set OpenClaw:Security:Jwt:* for JWT bearer validation or configure OpenClaw:AuthToken / OPENCLAW_AUTH_TOKEN.";
             if (isDoctorMode)
             {
                 Console.Error.WriteLine(message);

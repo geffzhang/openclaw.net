@@ -18,6 +18,7 @@ public sealed record InboundMessage
     public string? Subject { get; init; }
     public string? ApprovalId { get; init; }
     public bool? Approved { get; init; }
+    public SessionAuthContext? AuthContext { get; init; }
     public DateTimeOffset ReceivedAt { get; init; } = DateTimeOffset.UtcNow;
 }
 

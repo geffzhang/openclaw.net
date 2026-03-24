@@ -1,3 +1,7 @@
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using OpenClaw.Core.Models;
 using OpenClaw.Core.Pipeline;
 using OpenClaw.Core.Security;
 using OpenClaw.Gateway;
@@ -9,6 +13,8 @@ internal static class SecurityServicesExtensions
 {
     public static IServiceCollection AddOpenClawSecurityServices(this IServiceCollection services, GatewayStartupContext startup)
     {
+        ConfigureAuthentication(services, startup);
+
         services.AddSingleton<ToolApprovalService>();
         services.AddSingleton(sp =>
             new PairingManager(
@@ -58,5 +64,104 @@ internal static class SecurityServicesExtensions
                 sp.GetRequiredService<ILogger<ContractGovernanceService>>()));
 
         return services;
+    }
+
+    private static void ConfigureAuthentication(IServiceCollection services, GatewayStartupContext startup)
+    {
+        var jwt = startup.Config.Security.Jwt;
+        if (GatewaySecurity.IsJwtAuthenticationEnabled(startup.Config.Security))
+        {
+            var auth = services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme);
+            auth.AddJwtBearer(options =>
+            {
+                options.MapInboundClaims = false;
+                options.RequireHttpsMetadata = jwt.RequireHttpsMetadata;
+                options.SaveToken = false;
+
+                if (!string.IsNullOrWhiteSpace(jwt.Authority))
+                    options.Authority = jwt.Authority;
+
+                if (!string.IsNullOrWhiteSpace(jwt.MetadataAddress))
+                    options.MetadataAddress = jwt.MetadataAddress;
+
+                if (!string.IsNullOrWhiteSpace(jwt.Audience))
+                    options.Audience = jwt.Audience;
+
+                options.TokenValidationParameters = CreateTokenValidationParameters(jwt);
+                options.Events = new JwtBearerEvents
+                {
+                    OnMessageReceived = context =>
+                    {
+                        if (string.IsNullOrWhiteSpace(context.Token))
+                        {
+                            context.Token = GatewaySecurity.GetToken(
+                                context.HttpContext,
+                                startup.Config.Security.AllowQueryStringToken);
+                        }
+
+                        return Task.CompletedTask;
+                    }
+                };
+            });
+        }
+        else
+        {
+            services.AddAuthentication();
+        }
+
+        services.AddAuthorization();
+    }
+
+    private static TokenValidationParameters CreateTokenValidationParameters(JwtSecurityConfig jwt)
+    {
+        var validIssuers = Merge(jwt.ValidIssuer, jwt.ValidIssuers);
+        var validAudiences = Merge(jwt.Audience, jwt.ValidAudiences);
+        var signingKey = GatewaySecurity.ResolveJwtSigningKey(jwt);
+
+        var parameters = new TokenValidationParameters
+        {
+            ValidateIssuer = validIssuers.Length > 0 ||
+                !string.IsNullOrWhiteSpace(jwt.Authority) ||
+                !string.IsNullOrWhiteSpace(jwt.MetadataAddress),
+            ValidateAudience = validAudiences.Length > 0,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            RequireExpirationTime = true,
+            RequireSignedTokens = true,
+            ClockSkew = TimeSpan.FromMinutes(2),
+            NameClaimType = "sub"
+        };
+
+        if (validIssuers.Length > 0)
+        {
+            parameters.ValidIssuers = validIssuers;
+            parameters.ValidIssuer = validIssuers[0];
+        }
+
+        if (validAudiences.Length > 0)
+        {
+            parameters.ValidAudiences = validAudiences;
+            parameters.ValidAudience = validAudiences[0];
+        }
+
+        if (!string.IsNullOrWhiteSpace(signingKey))
+            parameters.IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey));
+
+        return parameters;
+    }
+
+    private static string[] Merge(string? primary, string[] additional)
+    {
+        var values = new List<string>(additional.Length + 1);
+        if (!string.IsNullOrWhiteSpace(primary))
+            values.Add(primary);
+
+        foreach (var value in additional)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+                values.Add(value);
+        }
+
+        return values.Distinct(StringComparer.Ordinal).ToArray();
     }
 }

@@ -71,6 +71,115 @@ public sealed class OpenClawToolExecutorTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_ToolAuthorizationRule_AllowsMatchingScope()
+    {
+        var tool = Substitute.For<ITool>();
+        tool.Name.Returns("shell");
+        tool.Description.Returns("shell");
+        tool.ParameterSchema.Returns("""{"type":"object"}""");
+        tool.ExecuteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<string>("ok"));
+
+        var executor = CreateExecutor(
+            [tool],
+            config: new GatewayConfig
+            {
+                Security = new SecurityConfig
+                {
+                    ToolAuthorization = new ToolAuthorizationConfig
+                    {
+                        Enabled = true,
+                        DefaultPolicy = "deny",
+                        Rules =
+                        [
+                            new ToolAuthorizationRule
+                            {
+                                Tool = "shell",
+                                AllowedScopes = ["tools.shell"]
+                            }
+                        ]
+                    }
+                }
+            });
+
+        var session = CreateSession();
+        session.AuthContext = new SessionAuthContext
+        {
+            Subject = "alice",
+            IsAuthenticated = true,
+            AuthMode = "bearer",
+            Scopes = ["tools.shell"],
+            Roles = []
+        };
+
+        var result = await executor.ExecuteAsync(
+            "shell",
+            "{}",
+            callId: null,
+            session,
+            CreateTurnContext(),
+            isStreaming: false,
+            approvalCallback: null,
+            CancellationToken.None);
+
+        Assert.Equal("ok", result.ResultText);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ToolAuthorizationRule_DeniesMissingScope()
+    {
+        var tool = Substitute.For<ITool>();
+        tool.Name.Returns("write_file");
+        tool.Description.Returns("write file");
+        tool.ParameterSchema.Returns("""{"type":"object"}""");
+
+        var executor = CreateExecutor(
+            [tool],
+            config: new GatewayConfig
+            {
+                Security = new SecurityConfig
+                {
+                    ToolAuthorization = new ToolAuthorizationConfig
+                    {
+                        Enabled = true,
+                        DefaultPolicy = "deny",
+                        Rules =
+                        [
+                            new ToolAuthorizationRule
+                            {
+                                Tool = "write_*",
+                                AllowedRoles = ["tool-writer"]
+                            }
+                        ]
+                    }
+                }
+            });
+
+        var session = CreateSession();
+        session.AuthContext = new SessionAuthContext
+        {
+            Subject = "alice",
+            IsAuthenticated = true,
+            AuthMode = "bearer",
+            Scopes = ["tools.read"],
+            Roles = ["tool-reader"]
+        };
+
+        var result = await executor.ExecuteAsync(
+            "write_file",
+            "{}",
+            callId: null,
+            session,
+            CreateTurnContext(),
+            isStreaming: false,
+            approvalCallback: null,
+            CancellationToken.None);
+
+        Assert.Contains("requires one of the configured JWT scopes or roles", result.ResultText, StringComparison.OrdinalIgnoreCase);
+        await tool.DidNotReceiveWithAnyArgs().ExecuteAsync(default!, default);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_SandboxPreferWithProvider_UsesSandbox()
     {
         var tool = new SandboxCapableEchoTool(ToolSandboxMode.Prefer, "local-result");

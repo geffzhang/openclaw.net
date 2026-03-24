@@ -39,24 +39,24 @@ internal static class AdminEndpoints
                 }, CoreJsonContext.Default.AuthSessionResponse);
             }
 
-            if (browserSessions.TryAuthorize(ctx, requireCsrf: false, out var browserTicket))
+            var auth = EndpointHelpers.AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: false);
+            if (!auth.IsAuthorized)
+                return Results.Unauthorized();
+
+            if (auth.UsedBrowserSession && auth.BrowserSession is { } browserTicket)
             {
                 return Results.Json(new AuthSessionResponse
                 {
                     AuthMode = "browser-session",
-                    CsrfToken = browserTicket!.CsrfToken,
+                    CsrfToken = browserTicket.CsrfToken,
                     ExpiresAtUtc = browserTicket.ExpiresAtUtc,
                     Persistent = browserTicket.Persistent
                 }, CoreJsonContext.Default.AuthSessionResponse);
             }
 
-            var token = GatewaySecurity.GetToken(ctx, startup.Config.Security.AllowQueryStringToken);
-            if (!GatewaySecurity.IsTokenValid(token, startup.Config.AuthToken!))
-                return Results.Unauthorized();
-
             return Results.Json(new AuthSessionResponse
             {
-                AuthMode = "bearer",
+                AuthMode = auth.AuthMode,
                 Persistent = false
             }, CoreJsonContext.Default.AuthSessionResponse);
         });

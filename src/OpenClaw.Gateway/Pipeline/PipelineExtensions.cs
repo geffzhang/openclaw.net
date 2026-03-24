@@ -18,6 +18,8 @@ internal static class PipelineExtensions
     {
         ConfigureForwardedHeaders(app, startup);
         ConfigureCors(app, runtime);
+        app.UseAuthentication();
+        app.UseAuthorization();
 
         app.UseStaticFiles();
 

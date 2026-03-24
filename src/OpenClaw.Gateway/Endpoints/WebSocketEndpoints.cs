@@ -81,7 +81,8 @@ internal static class WebSocketEndpoints
 
             var ws = await ctx.WebSockets.AcceptWebSocketAsync();
             var clientId = ctx.Connection.Id;
-            await runtime.WebSocketChannel.HandleConnectionAsync(ws, clientId, ctx.Connection.RemoteIpAddress, ctx.RequestAborted);
+            var authContext = GatewaySecurity.CreateSessionAuthContext(ctx.User, startup.Config.Security);
+            await runtime.WebSocketChannel.HandleConnectionAsync(ws, clientId, ctx.Connection.RemoteIpAddress, authContext, ctx.RequestAborted);
         });
     }
 }

@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
+using OpenClaw.Core.Security;
 
 namespace OpenClaw.Agent;
 
@@ -130,6 +131,14 @@ public sealed class OpenClawToolExecutor
             ArgumentsJson = argsJson,
             IsStreaming = isStreaming
         };
+
+        var authorizationDecision = ToolAuthorizationPolicyEvaluator.Evaluate(_config.Security.ToolAuthorization, session, tool.Name);
+        if (!authorizationDecision.Allowed)
+        {
+            var deniedMessage = authorizationDecision.FailureReason ?? $"Tool '{tool.Name}' is not allowed.";
+            _logger?.LogInformation("[{CorrelationId}] {Message}", turnCtx.CorrelationId, deniedMessage);
+            return CreateImmediateResult(toolName, argsJson, deniedMessage);
+        }
 
         foreach (var hook in _hooks)
         {

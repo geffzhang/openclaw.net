@@ -9,6 +9,8 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
 using NSubstitute;
 using OpenClaw.Client;
 using OpenClaw.Agent;
@@ -74,6 +76,32 @@ public sealed class GatewayAdminEndpointTests
         deleteRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
         var deleteResponse = await harness.Client.SendAsync(deleteRequest);
         Assert.Equal(HttpStatusCode.OK, deleteResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task AuthSession_JwtBearerAndBrowserSessionFlow_Works()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true, useJwtBearer: true);
+
+        var anonymousResponse = await harness.Client.GetAsync("/auth/session");
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymousResponse.StatusCode);
+
+        using var bearerRequest = new HttpRequestMessage(HttpMethod.Get, "/auth/session");
+        bearerRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var bearerResponse = await harness.Client.SendAsync(bearerRequest);
+        Assert.Equal(HttpStatusCode.OK, bearerResponse.StatusCode);
+        var bearerPayload = await ReadJsonAsync(bearerResponse);
+        Assert.Equal("bearer", bearerPayload.RootElement.GetProperty("authMode").GetString());
+
+        using var loginRequest = new HttpRequestMessage(HttpMethod.Post, "/auth/session")
+        {
+            Content = JsonContent("""{"remember":false}""")
+        };
+        loginRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var loginResponse = await harness.Client.SendAsync(loginRequest);
+        Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
+        var loginPayload = await ReadJsonAsync(loginResponse);
+        Assert.Equal("browser-session", loginPayload.RootElement.GetProperty("authMode").GetString());
     }
 
     [Fact]
@@ -938,7 +966,7 @@ public sealed class GatewayAdminEndpointTests
         return JsonDocument.Parse(payload);
     }
 
-    private static async Task<GatewayTestHarness> CreateHarnessAsync(bool nonLoopbackBind)
+    private static async Task<GatewayTestHarness> CreateHarnessAsync(bool nonLoopbackBind, bool useJwtBearer = false)
     {
         var storagePath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "openclaw-admin-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(storagePath);
@@ -946,7 +974,7 @@ public sealed class GatewayAdminEndpointTests
         var config = new GatewayConfig
         {
             BindAddress = nonLoopbackBind ? "0.0.0.0" : "127.0.0.1",
-            AuthToken = "test-admin-token",
+            AuthToken = useJwtBearer ? null : "test-admin-token",
             Memory = new MemoryConfig
             {
                 StoragePath = storagePath
@@ -970,6 +998,18 @@ public sealed class GatewayAdminEndpointTests
             }
         };
 
+        if (useJwtBearer)
+        {
+            config.Security.Jwt = new JwtSecurityConfig
+            {
+                Enabled = true,
+                Audience = "openclaw-tests",
+                ValidIssuer = "https://issuer.openclaw.test",
+                RequireHttpsMetadata = false,
+                SigningKeyRef = "raw:test-signing-key-for-openclaw-admin-tests-12345"
+            };
+        }
+
         var startup = new GatewayStartupContext
         {
             Config = config,
@@ -982,46 +1022,55 @@ public sealed class GatewayAdminEndpointTests
         builder.WebHost.UseTestServer();
         builder.Services.AddOpenApi("openclaw-integration");
         builder.Services.ConfigureHttpJsonOptions(opts => opts.SerializerOptions.TypeInfoResolverChain.Add(CoreJsonContext.Default));
+        builder.Services.AddOpenClawSecurityServices(startup);
         var memoryStore = new FileMemoryStore(storagePath, maxCachedSessions: 8);
         var sessionManager = new SessionManager(memoryStore, config, NullLogger.Instance);
         var heartbeatService = new HeartbeatService(config, memoryStore, sessionManager, NullLogger<HeartbeatService>.Instance);
         builder.Services.AddSingleton<IMemoryStore>(memoryStore);
         builder.Services.AddSingleton(sessionManager);
         builder.Services.AddSingleton(heartbeatService);
-        builder.Services.AddSingleton(new BrowserSessionAuthService(config));
-        builder.Services.AddSingleton(new AdminSettingsService(
-            config,
-            AdminSettingsService.CreateSnapshot(config),
-            AdminSettingsService.GetSettingsPath(config),
-            NullLogger<AdminSettingsService>.Instance));
         builder.Services.AddSingleton(new ProviderUsageTracker());
         builder.Services.AddSingleton(new ToolUsageTracker());
-        builder.Services.AddSingleton(new RuntimeEventStore(storagePath, NullLogger<RuntimeEventStore>.Instance));
-        builder.Services.AddSingleton(new ContractStore(storagePath, NullLogger<ContractStore>.Instance));
-        builder.Services.AddSingleton(sp =>
-        {
-            var contractStartup = new GatewayStartupContext
-            {
-                Config = config,
-                RuntimeState = RuntimeModeResolver.Resolve(config.Runtime),
-                IsNonLoopbackBind = nonLoopbackBind,
-                WorkspacePath = null
-            };
-            return new ContractGovernanceService(
-                contractStartup,
-                sp.GetRequiredService<ContractStore>(),
-                sp.GetRequiredService<RuntimeEventStore>(),
-                sp.GetRequiredService<ProviderUsageTracker>(),
-                NullLogger<ContractGovernanceService>.Instance);
-        });
 
         var app = builder.Build();
+        app.UseAuthentication();
+        app.UseAuthorization();
         var runtime = CreateRuntime(config, storagePath, memoryStore, sessionManager, heartbeatService);
         app.MapOpenApi("/openapi/{documentName}.json");
         app.MapOpenClawEndpoints(startup, runtime);
         await app.StartAsync();
 
-        return new GatewayTestHarness(app, app.GetTestClient(), runtime, config.AuthToken!, storagePath, memoryStore);
+        return new GatewayTestHarness(
+            app,
+            app.GetTestClient(),
+            runtime,
+            useJwtBearer ? CreateJwtBearerToken(config) : config.AuthToken!,
+            storagePath,
+            memoryStore);
+    }
+
+    private static string CreateJwtBearerToken(GatewayConfig config)
+    {
+        var jwt = config.Security.Jwt;
+        var signingKey = SecretResolver.Resolve(jwt.SigningKeyRef)
+            ?? throw new InvalidOperationException("JWT signing key must be configured for test token generation.");
+
+        var descriptor = new SecurityTokenDescriptor
+        {
+            Issuer = jwt.ValidIssuer,
+            Audience = jwt.Audience,
+            Claims = new Dictionary<string, object>
+            {
+                [JwtRegisteredClaimNames.Sub] = "admin-user"
+            },
+            NotBefore = DateTime.UtcNow.AddMinutes(-1),
+            Expires = DateTime.UtcNow.AddMinutes(30),
+            SigningCredentials = new SigningCredentials(
+                new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)),
+                SecurityAlgorithms.HmacSha256)
+        };
+
+        return new JsonWebTokenHandler().CreateToken(descriptor);
     }
 
     private static GatewayAppRuntime CreateRuntime(

@@ -129,6 +129,7 @@ See [docs/sandboxing.md](docs/sandboxing.md) for the architecture, build flag, l
 - [User Guide](docs/USER_GUIDE.md)
 - [Tool Guide](docs/TOOLS_GUIDE.md)
 - [Security Guide](SECURITY.md)
+- [Keycloak JWT RBAC Guide](docs/keycloak-jwt-rbac.md)
 - [Plugin Compatibility Guide](docs/COMPATIBILITY.md)
 - [Semantic Kernel Guide](docs/SEMANTIC_KERNEL.md)
 - [Plugin Compatibility Guide](COMPATIBILITY.md)
@@ -327,16 +328,22 @@ Server → Client:
 ## Internet-ready deployment
 
 ### Authentication (required for non-loopback bind)
-If `OpenClaw:BindAddress` is not loopback (e.g. `0.0.0.0`), you **must** set `OpenClaw:AuthToken` / `OPENCLAW_AUTH_TOKEN`.
+If `OpenClaw:BindAddress` is not loopback (e.g. `0.0.0.0`), you **must** configure authentication.
 
-Preferred client auth:
+Preferred gateway auth:
+- `OpenClaw:Security:Jwt:*` with a trusted OAuth2/OIDC issuer (`Authority` + `Audience`)
+- Clients send `Authorization: Bearer <jwt>`
+
+Legacy fallback auth:
+- `OpenClaw:AuthToken` / `OPENCLAW_AUTH_TOKEN`
 - `Authorization: Bearer <token>`
 
-Optional legacy auth (disabled by default):
+Optional query-string bearer transport (disabled by default):
 - `?token=<token>` when `OpenClaw:Security:AllowQueryStringToken=true`
 
 Built-in WebChat auth behavior:
 - The `/chat` UI connects to `/ws` using `?token=<token>` from the Auth Token field.
+- The field can hold either a short-lived JWT or the legacy static token.
 - For Internet-facing/non-loopback binds, set `OpenClaw:Security:AllowQueryStringToken=true` if you use the built-in WebChat.
 - Tokens are stored in `sessionStorage` by default. Enabling **Remember** also stores `openclaw_token` in `localStorage`.
 
@@ -501,11 +508,13 @@ export OPENCLAW_AUTH_TOKEN="$(openssl rand -hex 32)"
 **PowerShell:**
 ```powershell
 $env:MODEL_PROVIDER_KEY = "sk-..."
-$env:OPENCLAW_AUTH_TOKEN = [Convert]::ToHexString((1..32 | Array { Get-Random -Min 0 -Max 256 }))
+$env:OPENCLAW__SECURITY__JWT__AUTHORITY = "https://login.example.com/realms/openclaw"
+$env:OPENCLAW__SECURITY__JWT__AUDIENCE = "openclaw-gateway"
+$env:OPENCLAW__SECURITY__JWT__ENABLED = "true"
 $env:EMAIL_PASSWORD = "..." # (Optional) For email tool
 ```
 
-> **Note**: For the built-in WebChat UI (`http://<ip>:18789/chat`), enter this exact `OPENCLAW_AUTH_TOKEN` value in the "Auth Token" field. WebChat connects with a query token (`?token=`), so on non-loopback binds you must also set `OpenClaw:Security:AllowQueryStringToken=true`. Tokens are session-scoped by default; check **Remember** to persist across browser restarts. If you enable the **Email Tool**, set `EMAIL_PASSWORD` similarly.
+> **Note**: For the built-in WebChat UI (`http://<ip>:18789/chat`), paste a valid bearer token in the "Auth Token" field. When using JWT auth, this should be a short-lived access token from your identity provider. WebChat connects with a query token (`?token=`), so on non-loopback binds you must also set `OpenClaw:Security:AllowQueryStringToken=true`. Tokens are session-scoped by default; check **Remember** to persist across browser restarts. If you enable the **Email Tool**, set `EMAIL_PASSWORD` similarly.
 
 # 2. Run (gateway only)
 docker compose up -d openclaw

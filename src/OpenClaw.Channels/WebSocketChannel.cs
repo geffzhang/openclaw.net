@@ -24,6 +24,7 @@ public sealed class WebSocketChannel : IChannelAdapter
     {
         public required WebSocket Socket { get; init; }
         public string IpKey { get; init; } = "unknown";
+        public SessionAuthContext? AuthContext { get; init; }
         public bool UseJsonEnvelope { get; set; }
         public SemaphoreSlim SendLock { get; } = new(1, 1);
         public RateWindow Rate { get; }
@@ -68,9 +69,12 @@ public sealed class WebSocketChannel : IChannelAdapter
 
     public Task StartAsync(CancellationToken ct) => Task.CompletedTask; // Kestrel manages the listener
 
-    public async Task HandleConnectionAsync(WebSocket ws, string clientId, IPAddress? remoteIp, CancellationToken ct)
+    public Task HandleConnectionAsync(WebSocket ws, string clientId, IPAddress? remoteIp, CancellationToken ct)
+        => HandleConnectionAsync(ws, clientId, remoteIp, authContext: null, ct);
+
+    public async Task HandleConnectionAsync(WebSocket ws, string clientId, IPAddress? remoteIp, SessionAuthContext? authContext = null, CancellationToken ct = default)
     {
-        if (!TryAddConnection(clientId, ws, remoteIp, out var state))
+        if (!TryAddConnection(clientId, ws, remoteIp, authContext, out var state))
         {
             await CloseIfOpenAsync(ws, WebSocketCloseStatus.PolicyViolation, "connection limit exceeded", ct);
             return;
@@ -116,7 +120,8 @@ public sealed class WebSocketChannel : IChannelAdapter
                     MessageId = parsed.MessageId,
                     ReplyToMessageId = parsed.ReplyToMessageId,
                     ApprovalId = parsed.ApprovalId,
-                    Approved = parsed.Approved
+                    Approved = parsed.Approved,
+                    AuthContext = state.AuthContext
                 };
 
                 if (OnMessageReceived is not null)
@@ -298,14 +303,14 @@ public sealed class WebSocketChannel : IChannelAdapter
 
     internal bool TryAddConnectionForTest(string clientId, WebSocket ws, IPAddress? remoteIp, bool useJsonEnvelope)
     {
-        if (!TryAddConnection(clientId, ws, remoteIp, out var state))
+        if (!TryAddConnection(clientId, ws, remoteIp, authContext: null, out var state))
             return false;
 
         state.UseJsonEnvelope = useJsonEnvelope;
         return true;
     }
 
-    private bool TryAddConnection(string clientId, WebSocket ws, IPAddress? remoteIp, out ConnectionState state)
+    private bool TryAddConnection(string clientId, WebSocket ws, IPAddress? remoteIp, SessionAuthContext? authContext, out ConnectionState state)
     {
         state = null!;
 
@@ -320,7 +325,8 @@ public sealed class WebSocketChannel : IChannelAdapter
         state = new ConnectionState(_config.MessagesPerMinutePerConnection)
         {
             Socket = ws,
-            IpKey = ipKey
+            IpKey = ipKey,
+            AuthContext = authContext
         };
 
         var perIp = _connectionsPerIp.AddOrUpdate(state.IpKey, 1, (_, c) => c + 1);

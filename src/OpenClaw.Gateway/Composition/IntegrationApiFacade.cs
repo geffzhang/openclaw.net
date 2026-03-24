@@ -164,7 +164,7 @@ internal sealed class IntegrationApiFacade
         };
     }
 
-    public async Task<IntegrationMessageResponse> QueueMessageAsync(IntegrationMessageRequest request, CancellationToken cancellationToken)
+    public async Task<IntegrationMessageResponse> QueueMessageAsync(IntegrationMessageRequest request, SessionAuthContext? authContext, CancellationToken cancellationToken)
     {
         var effectiveChannelId = string.IsNullOrWhiteSpace(request.ChannelId) ? "integration-api" : request.ChannelId.Trim();
         var effectiveSenderId = string.IsNullOrWhiteSpace(request.SenderId) ? "http-client" : request.SenderId.Trim();
@@ -182,7 +182,8 @@ internal sealed class IntegrationApiFacade
             Type = "user_message",
             Text = request.Text,
             MessageId = request.MessageId,
-            ReplyToMessageId = request.ReplyToMessageId
+            ReplyToMessageId = request.ReplyToMessageId,
+            AuthContext = authContext
         };
 
         if (!_runtime.Pipeline.InboundWriter.TryWrite(message))
@@ -197,6 +198,9 @@ internal sealed class IntegrationApiFacade
             MessageId = request.MessageId
         };
     }
+
+    public Task<IntegrationMessageResponse> QueueMessageAsync(IntegrationMessageRequest request, CancellationToken cancellationToken)
+        => QueueMessageAsync(request, authContext: null, cancellationToken);
 
     public static SessionListQuery BuildSessionQuery(
         string? search,

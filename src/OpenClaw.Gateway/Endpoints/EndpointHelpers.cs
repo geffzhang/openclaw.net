@@ -20,6 +20,9 @@ internal static class EndpointHelpers
         if (!isNonLoopbackBind)
             return true;
 
+        if (GatewaySecurity.IsJwtAuthenticationEnabled(config.Security))
+            return GatewaySecurity.IsAuthenticated(ctx.User);
+
         var token = GatewaySecurity.GetToken(ctx, config.Security.AllowQueryStringToken);
         return GatewaySecurity.IsTokenValid(token, config.AuthToken!);
     }
@@ -39,14 +42,28 @@ internal static class EndpointHelpers
                 BrowserSession: null);
         }
 
-        var token = GatewaySecurity.GetToken(ctx, startup.Config.Security.AllowQueryStringToken);
-        if (GatewaySecurity.IsTokenValid(token, startup.Config.AuthToken!))
+        if (GatewaySecurity.IsJwtAuthenticationEnabled(startup.Config.Security))
         {
-            return new OperatorAuthorizationResult(
-                true,
-                "bearer",
-                UsedBrowserSession: false,
-                BrowserSession: null);
+            if (GatewaySecurity.IsAuthenticated(ctx.User))
+            {
+                return new OperatorAuthorizationResult(
+                    true,
+                    "bearer",
+                    UsedBrowserSession: false,
+                    BrowserSession: null);
+            }
+        }
+        else
+        {
+            var token = GatewaySecurity.GetToken(ctx, startup.Config.Security.AllowQueryStringToken);
+            if (GatewaySecurity.IsTokenValid(token, startup.Config.AuthToken!))
+            {
+                return new OperatorAuthorizationResult(
+                    true,
+                    "bearer",
+                    UsedBrowserSession: false,
+                    BrowserSession: null);
+            }
         }
 
         if (browserSessions.TryAuthorize(ctx, requireCsrf, out var ticket))
@@ -79,6 +96,10 @@ internal static class EndpointHelpers
 
     public static string GetHttpRateLimitKey(HttpContext ctx, GatewayConfig config)
     {
+        var subject = GatewaySecurity.GetAuthenticatedSubject(ctx.User);
+        if (!string.IsNullOrWhiteSpace(subject))
+            return "subject:" + subject;
+
         var token = GatewaySecurity.GetToken(ctx, config.Security.AllowQueryStringToken);
         if (!string.IsNullOrWhiteSpace(token))
         {
@@ -102,7 +123,9 @@ internal static class EndpointHelpers
         return auth.AuthMode switch
         {
             "browser-session" when auth.BrowserSession is not null => $"browser:{auth.BrowserSession.SessionId}",
-            "bearer" => $"bearer:{GetRemoteIpKey(ctx)}",
+            "bearer" => GatewaySecurity.GetAuthenticatedSubject(ctx.User) is { Length: > 0 } subject
+                ? $"bearer:{subject}"
+                : $"bearer:{GetRemoteIpKey(ctx)}",
             "loopback-open" => "loopback",
             _ => $"operator:{GetRemoteIpKey(ctx)}"
         };

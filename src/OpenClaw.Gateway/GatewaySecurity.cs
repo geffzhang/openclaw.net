@@ -1,7 +1,11 @@
 using System.Net;
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Http;
+using OpenClaw.Core.Models;
+using OpenClaw.Core.Security;
 
 namespace OpenClaw.Gateway;
 
@@ -39,6 +43,49 @@ internal static class GatewaySecurity
             return null;
 
         return ctx.Request.Query["token"].FirstOrDefault();
+    }
+
+    public static bool IsJwtAuthenticationEnabled(SecurityConfig security)
+        => security.Jwt.Enabled;
+
+    public static bool IsAuthenticated(ClaimsPrincipal? principal)
+        => principal?.Identity?.IsAuthenticated == true;
+
+    public static string? GetAuthenticatedSubject(ClaimsPrincipal? principal)
+    {
+        if (!IsAuthenticated(principal))
+            return null;
+
+        return principal!.FindFirst("sub")?.Value
+            ?? principal.FindFirst("client_id")?.Value
+            ?? principal.Identity?.Name;
+    }
+
+    public static string? ResolveJwtSigningKey(JwtSecurityConfig config)
+        => SecretResolver.Resolve(config.SigningKeyRef);
+
+    public static SessionAuthContext? CreateSessionAuthContext(ClaimsPrincipal? principal, SecurityConfig security)
+    {
+        if (!IsAuthenticated(principal))
+            return null;
+
+        var subject = GetAuthenticatedSubject(principal);
+        if (string.IsNullOrWhiteSpace(subject))
+            return null;
+
+        var toolAuth = security.ToolAuthorization;
+        var scopes = ExtractClaimValues(principal!, toolAuth.ScopeClaimTypes);
+        var roles = ExtractClaimValues(principal!, toolAuth.RoleClaimTypes);
+
+        return new SessionAuthContext
+        {
+            Subject = subject,
+            DisplayName = principal!.Identity?.Name,
+            IsAuthenticated = true,
+            AuthMode = "bearer",
+            Scopes = scopes,
+            Roles = roles
+        };
     }
 
     public static bool IsTokenValid(string? provided, string expected)
@@ -109,5 +156,91 @@ internal static class GatewaySecurity
         if (c is >= 'A' and <= 'F')
             return c - 'A' + 10;
         return -1;
+    }
+
+    private static string[] ExtractClaimValues(ClaimsPrincipal principal, string[] claimTypes)
+    {
+        var values = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var claimType in claimTypes)
+        {
+            foreach (var claim in principal.Claims.Where(claim => string.Equals(claim.Type, claimType, StringComparison.OrdinalIgnoreCase)))
+                AddClaimValue(values, claim.Type, claim.Value);
+        }
+
+        return values.ToArray();
+    }
+
+    private static void AddClaimValue(HashSet<string> values, string claimType, string claimValue)
+    {
+        if (string.IsNullOrWhiteSpace(claimValue))
+            return;
+
+        if (TryAddKeycloakRoles(values, claimType, claimValue))
+            return;
+
+        if (claimValue.StartsWith("[", StringComparison.Ordinal) && TryAddJsonArrayValues(values, claimValue))
+            return;
+
+        foreach (var part in claimValue.Split([' ', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            values.Add(part);
+    }
+
+    private static bool TryAddKeycloakRoles(HashSet<string> values, string claimType, string claimValue)
+    {
+        if (!claimValue.StartsWith("{", StringComparison.Ordinal))
+            return false;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(claimValue);
+            if (string.Equals(claimType, "realm_access", StringComparison.OrdinalIgnoreCase))
+            {
+                AddJsonArrayProperty(values, doc.RootElement, "roles");
+                return true;
+            }
+
+            if (string.Equals(claimType, "resource_access", StringComparison.OrdinalIgnoreCase))
+            {
+                foreach (var client in doc.RootElement.EnumerateObject())
+                    AddJsonArrayProperty(values, client.Value, "roles");
+                return true;
+            }
+        }
+        catch (JsonException)
+        {
+        }
+
+        return false;
+    }
+
+    private static bool TryAddJsonArrayValues(HashSet<string> values, string claimValue)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(claimValue);
+            foreach (var item in doc.RootElement.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(item.GetString()))
+                    values.Add(item.GetString()!);
+            }
+
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static void AddJsonArrayProperty(HashSet<string> values, JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var roles) || roles.ValueKind != JsonValueKind.Array)
+            return;
+
+        foreach (var role in roles.EnumerateArray())
+        {
+            if (role.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(role.GetString()))
+                values.Add(role.GetString()!);
+        }
     }
 }

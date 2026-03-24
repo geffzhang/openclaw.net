@@ -153,6 +153,8 @@ public sealed class SecurityConfig
     public string[] AllowedOrigins { get; set; } = [];
     public bool TrustForwardedHeaders { get; set; } = false;
     public string[] KnownProxies { get; set; } = [];
+    public JwtSecurityConfig Jwt { get; set; } = new();
+    public ToolAuthorizationConfig ToolAuthorization { get; set; } = new();
     public bool RequireRequesterMatchForHttpToolApproval { get; set; } = false;
 
     /// <summary>
@@ -179,6 +181,35 @@ public sealed class SecurityConfig
 
     /// <summary>Lifetime (days) for persistent browser admin sessions created with "Remember me". Default 30 days.</summary>
     public int BrowserRememberDays { get; set; } = 30;
+}
+
+public sealed class JwtSecurityConfig
+{
+    public bool Enabled { get; set; } = false;
+    public string? Authority { get; set; }
+    public string? MetadataAddress { get; set; }
+    public string? Audience { get; set; }
+    public string? ValidIssuer { get; set; }
+    public string[] ValidIssuers { get; set; } = [];
+    public string[] ValidAudiences { get; set; } = [];
+    public bool RequireHttpsMetadata { get; set; } = true;
+    public string? SigningKeyRef { get; set; }
+}
+
+public sealed class ToolAuthorizationConfig
+{
+    public bool Enabled { get; set; } = false;
+    public string DefaultPolicy { get; set; } = "allow";
+    public string[] ScopeClaimTypes { get; set; } = ["scope", "scp"];
+    public string[] RoleClaimTypes { get; set; } = ["role", "roles", "realm_access", "resource_access"];
+    public ToolAuthorizationRule[] Rules { get; set; } = [];
+}
+
+public sealed class ToolAuthorizationRule
+{
+    public string Tool { get; set; } = "*";
+    public string[] AllowedScopes { get; set; } = [];
+    public string[] AllowedRoles { get; set; } = [];
 }
 
 public sealed class WebSocketConfig

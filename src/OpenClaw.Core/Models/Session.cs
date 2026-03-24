@@ -32,6 +32,19 @@ public sealed class Session
 
     /// <summary>Optional contract policy governing this session's execution limits.</summary>
     public ContractPolicy? ContractPolicy { get; set; }
+
+    /// <summary>Optional authenticated caller context captured from the gateway.</summary>
+    public SessionAuthContext? AuthContext { get; set; }
+}
+
+public sealed class SessionAuthContext
+{
+    public required string Subject { get; init; }
+    public string? DisplayName { get; init; }
+    public bool IsAuthenticated { get; init; }
+    public string AuthMode { get; init; } = "anonymous";
+    public string[] Scopes { get; init; } = [];
+    public string[] Roles { get; init; } = [];
 }
 
 public enum SessionState : byte
@@ -77,6 +90,9 @@ public sealed record ToolInvocation
 [JsonSerializable(typeof(MemoryRecallConfig))]
 [JsonSerializable(typeof(MemoryRetentionConfig))]
 [JsonSerializable(typeof(SecurityConfig))]
+[JsonSerializable(typeof(ToolAuthorizationConfig))]
+[JsonSerializable(typeof(ToolAuthorizationRule))]
+[JsonSerializable(typeof(ToolAuthorizationRule[]))]
 [JsonSerializable(typeof(WebSocketConfig))]
 [JsonSerializable(typeof(ToolingConfig))]
 [JsonSerializable(typeof(SandboxConfig))]
@@ -89,6 +105,7 @@ public sealed record ToolInvocation
 [JsonSerializable(typeof(Contact))]
 [JsonSerializable(typeof(ContactStoreState))]
 [JsonSerializable(typeof(List<ChatTurn>))]
+[JsonSerializable(typeof(SessionAuthContext))]
 [JsonSerializable(typeof(IDictionary<string, object?>))]
 [JsonSerializable(typeof(Dictionary<string, object?>))]
 [JsonSerializable(typeof(PluginManifest))]
