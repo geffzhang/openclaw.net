@@ -39,6 +39,17 @@ internal static class ChannelServicesExtensions
             services.AddSingleton<TelegramChannel>();
         }
 
+        if (config.Channels.Teams.Enabled)
+        {
+            services.AddSingleton(config.Channels.Teams);
+            services.AddSingleton<TeamsWebhookHandler>();
+            services.AddSingleton<TeamsChannel>(sp =>
+                new TeamsChannel(
+                    config.Channels.Teams,
+                    OpenClaw.Core.Http.HttpClientFactory.Create(),
+                    sp.GetRequiredService<ILogger<TeamsChannel>>()));
+        }
+
         return services;
     }
 }

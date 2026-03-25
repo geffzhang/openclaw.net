@@ -321,6 +321,7 @@ internal static class GatewayWorkers
                             if (msg.ChannelId == "sms") policy = config.Channels.Sms.DmPolicy;
                             if (msg.ChannelId == "telegram") policy = config.Channels.Telegram.DmPolicy;
                             if (msg.ChannelId == "whatsapp") policy = config.Channels.WhatsApp.DmPolicy;
+                            if (msg.ChannelId == "teams") policy = config.Channels.Teams.DmPolicy;
 
                             if (policy is "closed")
                                 continue; // Silently drop all inbound messages

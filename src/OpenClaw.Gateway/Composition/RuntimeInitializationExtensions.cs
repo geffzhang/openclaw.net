@@ -84,6 +84,9 @@ internal static class RuntimeInitializationExtensions
         if (config.Channels.Telegram.Enabled)
             channelAdapters["telegram"] = app.Services.GetRequiredService<TelegramChannel>();
 
+        if (config.Channels.Teams.Enabled)
+            channelAdapters["teams"] = app.Services.GetRequiredService<TeamsChannel>();
+
         if (config.Channels.WhatsApp.Enabled)
         {
             if (string.Equals(config.Channels.WhatsApp.Type, "first_party_worker", StringComparison.OrdinalIgnoreCase))

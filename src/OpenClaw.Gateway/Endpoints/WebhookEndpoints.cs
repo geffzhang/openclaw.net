@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.WebUtilities;
+using OpenClaw.Channels;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Security;
 using OpenClaw.Gateway;
@@ -300,6 +301,58 @@ internal static class WebhookEndpoints
                             SessionId = replayMessage?.SessionId,
                             Error = ex.Message,
                             PayloadPreview = bodyText.Length <= 500 ? bodyText : bodyText[..500] + "…"
+                        },
+                        ReplayMessage = replayMessage
+                    });
+                    ctx.Response.StatusCode = StatusCodes.Status500InternalServerError;
+                    await ctx.Response.WriteAsync("Webhook processing failed.", ctx.RequestAborted);
+                }
+            });
+        }
+
+        if (startup.Config.Channels.Teams.Enabled)
+        {
+            var teamsHandler = app.Services.GetRequiredService<TeamsWebhookHandler>();
+            var teamsChannel = app.Services.GetRequiredService<TeamsChannel>();
+            app.MapPost(startup.Config.Channels.Teams.WebhookPath, async (HttpContext ctx) =>
+            {
+                InboundMessage? replayMessage = null;
+                var deliveryKey = "";
+                try
+                {
+                    var result = await teamsHandler.HandleAsync(
+                        ctx,
+                        teamsChannel,
+                        async (msg, ct2) =>
+                        {
+                            replayMessage = msg;
+                            deliveryKey = msg.MessageId ?? "";
+                            if (!string.IsNullOrWhiteSpace(deliveryKey) &&
+                                !deliveries.TryBegin("teams", deliveryKey, TimeSpan.FromHours(6)))
+                                return;
+                            await runtime.Pipeline.InboundWriter.WriteAsync(msg, ct2);
+                        },
+                        ctx.RequestAborted);
+
+                    ctx.Response.StatusCode = result.StatusCode;
+                    if (result.ContentType is not null)
+                        ctx.Response.ContentType = result.ContentType;
+                    if (result.Body is not null)
+                        await ctx.Response.WriteAsync(result.Body, ctx.RequestAborted);
+                }
+                catch (Exception ex)
+                {
+                    deliveries.RecordDeadLetter(new WebhookDeadLetterRecord
+                    {
+                        Entry = new WebhookDeadLetterEntry
+                        {
+                            Id = $"whdl_{Guid.NewGuid():N}"[..20],
+                            Source = "teams",
+                            DeliveryKey = deliveryKey,
+                            ChannelId = "teams",
+                            SenderId = replayMessage?.SenderId,
+                            SessionId = replayMessage?.SessionId,
+                            Error = ex.Message
                         },
                         ReplayMessage = replayMessage
                     });
