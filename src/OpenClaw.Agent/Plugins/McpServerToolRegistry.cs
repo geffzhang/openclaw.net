@@ -1,5 +1,3 @@
-using System.Diagnostics;
-using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -39,14 +37,22 @@ public sealed class McpServerToolRegistry : IDisposable
     /// </summary>
     public async Task RegisterToolsAsync(NativePluginRegistry nativeRegistry, CancellationToken ct)
     {
-        if (_registered)
-            return;
+        await _loadSemaphore.WaitAsync(ct);
+        try
+        {
+            if (_registered)
+                return;
 
-        var tools = await LoadAsync(ct);
-        foreach (var tool in tools)
-            nativeRegistry.RegisterExternalTool(tool.Tool, tool.PluginId, tool.Detail);
+            var tools = await LoadInternalAsync(ct);
+            foreach (var tool in tools)
+                nativeRegistry.RegisterExternalTool(tool.Tool, tool.PluginId, tool.Detail);
 
-        _registered = true;
+            _registered = true;
+        }
+        finally
+        {
+            _loadSemaphore.Release();
+        }
     }
 
     internal async Task<IReadOnlyList<DiscoveredMcpTool>> LoadAsync(CancellationToken ct)
@@ -54,69 +60,74 @@ public sealed class McpServerToolRegistry : IDisposable
         await _loadSemaphore.WaitAsync(ct);
         try
         {
-            if (_loaded)
-                return _tools;
-
-            if (!_config.Enabled)
-            {
-                _loaded = true;
-                return _tools;
-            }
-
-            var discoveredTools = new List<DiscoveredMcpTool>();
-            var discoveredClients = new List<McpClient>();
-
-            try
-            {
-                foreach (var (serverId, serverConfig) in _config.Servers)
-                {
-                    if (!serverConfig.Enabled)
-                        continue;
-
-                    var transport = CreateTransport(serverId, serverConfig);
-                    using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                    timeoutCts.CancelAfter(TimeSpan.FromSeconds(serverConfig.StartupTimeoutSeconds));
-                    var client = await McpClient.CreateAsync(transport, cancellationToken: timeoutCts.Token);
-                    discoveredClients.Add(client);
-
-                    var displayName = string.IsNullOrWhiteSpace(serverConfig.Name) ? serverId : serverConfig.Name!;
-                    var pluginId = $"mcp:{serverId}";
-
-                    var tools = await LoadToolsFromClientAsync(client, serverId, pluginId, displayName, serverConfig, ct);
-
-                    foreach (var tool in tools)
-                    {
-                        discoveredTools.Add(new DiscoveredMcpTool(
-                            pluginId,
-                            new McpNativeTool(client, tool.LocalName, tool.RemoteName, tool.Description, tool.InputSchemaText),
-                            displayName));
-                    }
-                }
-
-                _clients.AddRange(discoveredClients);
-                _tools.AddRange(discoveredTools);
-                _loaded = true;
-                return _tools;
-            }
-            catch
-            {
-                foreach (var client in discoveredClients)
-                {
-                    try
-                    {
-                        (client as IDisposable)?.Dispose();
-                        (client as IAsyncDisposable)?.DisposeAsync().GetAwaiter().GetResult();
-                    }
-                    catch
-                    {
-                    }
-                }
-                throw;
-            }
+            return _loaded ? _tools : await LoadInternalAsync(ct);
         }
         finally
         {
             _loadSemaphore.Release();
+        }
+    }
+
+    private async Task<IReadOnlyList<DiscoveredMcpTool>> LoadInternalAsync(CancellationToken ct)
+    {
+        if (_loaded)
+            return _tools;
+
+        if (!_config.Enabled)
+        {
+            _loaded = true;
+            return _tools;
+        }
+
+        var discoveredTools = new List<DiscoveredMcpTool>();
+        var discoveredClients = new List<McpClient>();
+
+        try
+        {
+            foreach (var (serverId, serverConfig) in _config.Servers)
+            {
+                if (!serverConfig.Enabled)
+                    continue;
+
+                var transport = CreateTransport(serverId, serverConfig);
+                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeoutCts.CancelAfter(TimeSpan.FromSeconds(serverConfig.StartupTimeoutSeconds));
+                var client = await McpClient.CreateAsync(transport, cancellationToken: timeoutCts.Token);
+                discoveredClients.Add(client);
+
+                var displayName = string.IsNullOrWhiteSpace(serverConfig.Name) ? serverId : serverConfig.Name!;
+                var pluginId = $"mcp:{serverId}";
+
+                var tools = await LoadToolsFromClientAsync(client, serverId, pluginId, displayName, serverConfig, ct);
+
+                foreach (var tool in tools)
+                {
+                    discoveredTools.Add(new DiscoveredMcpTool(
+                        pluginId,
+                        new McpNativeTool(client, tool.LocalName, tool.RemoteName, tool.Description, tool.InputSchemaText),
+                        displayName));
+                }
+            }
+
+            _clients.AddRange(discoveredClients);
+            _tools.AddRange(discoveredTools);
+            _loaded = true;
+            return _tools;
+        }
+        catch
+        {
+            foreach (var client in discoveredClients)
+            {
+                try
+                {
+                    (client as IDisposable)?.Dispose();
+                    (client as IAsyncDisposable)?.DisposeAsync().GetAwaiter().GetResult();
+                }
+                catch
+                {
+                }
+            }
+            throw;
         }
     }
 

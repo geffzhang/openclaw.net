@@ -120,7 +120,10 @@ internal static class RuntimeInitializationExtensions
             loggerFactory.CreateLogger<CronChannel>());
 
         var builtInTools = CreateBuiltInTools(config, memoryStore, sessionManager, pipeline, startup.WorkspacePath);
-        await mcpRegistry.RegisterToolsAsync(nativeRegistry, app.Lifetime.ApplicationStopping);
+        if (config.Plugins.Mcp.Enabled)
+        {
+            await mcpRegistry.RegisterToolsAsync(nativeRegistry, app.Lifetime.ApplicationStopping);
+        }
         LlmClientFactory.ResetDynamicProviders();
         try
         {
