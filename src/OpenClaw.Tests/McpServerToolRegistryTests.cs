@@ -46,6 +46,14 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
         var tool = Assert.Single(nativeRegistry.Tools);
         Assert.Equal("demo.echo", tool.Name);
         Assert.Contains("Demo echo tool", tool.Description, StringComparison.Ordinal);
+        using (var schemaDocument = JsonDocument.Parse(tool.ParameterSchema))
+        {
+            var schemaRoot = schemaDocument.RootElement;
+            Assert.Equal(JsonValueKind.Object, schemaRoot.ValueKind);
+            Assert.True(schemaRoot.TryGetProperty("properties", out var properties));
+            Assert.True(properties.TryGetProperty("text", out var textProperty));
+            Assert.Equal(JsonValueKind.Object, textProperty.ValueKind);
+        }
         Assert.Equal("demo:hello", await tool.ExecuteAsync("""{"text":"hello"}""", CancellationToken.None));
         Assert.True(calls.InitializeCalls >= 1);
         Assert.True(calls.ListCalls >= 1);
@@ -99,7 +107,7 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task RegisterToolsAsync_MultipleCalls_RegistersOwnedResourceOnlyOnce()
+    public async Task RegisterToolsAsync_MultipleCalls_DoesNotRegisterSelfAsOwnedResource()
     {
         var (serverUrl, _) = await StartMcpServerAsync();
         var registry = new McpServerToolRegistry(
@@ -125,7 +133,7 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
 
         var ownedResourcesField = typeof(NativePluginRegistry).GetField("_ownedResources", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
         var ownedResources = Assert.IsType<List<IDisposable>>(ownedResourcesField?.GetValue(nativeRegistry));
-        Assert.Single(ownedResources);
+        Assert.Empty(ownedResources);
     }
 
     [Fact]

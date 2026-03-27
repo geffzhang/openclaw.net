@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
@@ -18,11 +19,9 @@ public sealed class McpServerToolRegistry : IDisposable
 {
     private readonly McpPluginsConfig _config;
     private readonly ILogger _logger;
-    private readonly List<IDisposable> _ownedResources = [];
     private readonly List<DiscoveredMcpTool> _tools = [];
     private readonly List<McpClient> _clients = [];
     private bool _loaded;
-    private int _registeredAsOwnedResource;
 
     /// <summary>
     /// Creates a registry for configured MCP servers.
@@ -39,8 +38,6 @@ public sealed class McpServerToolRegistry : IDisposable
     public async Task RegisterToolsAsync(NativePluginRegistry nativeRegistry, CancellationToken ct)
     {
         var tools = await LoadAsync(ct);
-        if (Interlocked.Exchange(ref _registeredAsOwnedResource, 1) == 0)
-            nativeRegistry.RegisterOwnedResource(this);
         foreach (var tool in tools)
             nativeRegistry.RegisterExternalTool(tool.Tool, tool.PluginId, tool.Detail);
     }
@@ -131,7 +128,7 @@ public sealed class McpServerToolRegistry : IDisposable
             var description = !string.IsNullOrWhiteSpace(tool.Description)
                 ? $"{tool.Description} (from MCP server '{displayName}')"
                 : $"MCP tool '{remoteName}' from server '{displayName}'.";
-            var inputSchema = "{}";
+            var inputSchema = ResolveInputSchemaText(tool.JsonSchema);
             tools.Add(new McpToolDescriptor(localName, remoteName, description, inputSchema));
         }
 
@@ -166,10 +163,16 @@ public sealed class McpServerToolRegistry : IDisposable
         return sb.Length == 0 ? "mcp" : sb.ToString();
     }
 
+    private static string ResolveInputSchemaText(JsonElement inputSchema)
+    {
+        if (inputSchema.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+            return "{}";
+
+        return inputSchema.GetRawText();
+    }
+
     public void Dispose()
     {
-        foreach (var resource in _ownedResources)
-            resource.Dispose();
         foreach (var client in _clients)
         {
             try
