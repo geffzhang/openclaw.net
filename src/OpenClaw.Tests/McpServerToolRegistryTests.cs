@@ -137,6 +137,35 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task LoadAsync_ConcurrentCalls_LoadsToolsOnce()
+    {
+        var (serverUrl, calls) = await StartMcpServerAsync();
+        var registry = new McpServerToolRegistry(
+            new McpPluginsConfig
+            {
+                Enabled = true,
+                Servers = new Dictionary<string, McpServerConfig>(StringComparer.Ordinal)
+                {
+                    ["demo"] = new()
+                    {
+                        Transport = "http",
+                        Url = serverUrl
+                    }
+                }
+            },
+            NullLogger<McpServerToolRegistry>.Instance);
+
+        var loads = await Task.WhenAll(
+            registry.LoadAsync(CancellationToken.None),
+            registry.LoadAsync(CancellationToken.None),
+            registry.LoadAsync(CancellationToken.None),
+            registry.LoadAsync(CancellationToken.None));
+
+        Assert.All(loads, tools => Assert.Single(tools));
+        Assert.Equal(1, calls.ListCalls);
+    }
+
+    [Fact]
     public async Task LoadAsync_WhenFirstAttemptFails_AllowsRetryAndLoadsTools()
     {
         var (serverUrl, _) = await StartMcpServerAsync();
