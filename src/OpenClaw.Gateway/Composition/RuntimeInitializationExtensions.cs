@@ -153,6 +153,28 @@ internal static class RuntimeInitializationExtensions
             pluginComposition.NativeDynamicPluginHost);
 
         await profile.OnRuntimeInitializedAsync(app, startup, runtime);
+
+        // Start integration services
+        if (config.Tailscale.Enabled)
+        {
+            var tailscale = new Integrations.TailscaleService(
+                config.Tailscale,
+                config.Port,
+                loggerFactory.CreateLogger<Integrations.TailscaleService>());
+            _ = tailscale.StartAsync(app.Lifetime.ApplicationStopping);
+            app.Lifetime.ApplicationStopping.Register(() => tailscale.DisposeAsync().AsTask().GetAwaiter().GetResult());
+        }
+
+        if (config.Mdns.Enabled)
+        {
+            var mdns = new Integrations.MdnsDiscoveryService(
+                config.Mdns,
+                config.Port,
+                loggerFactory.CreateLogger<Integrations.MdnsDiscoveryService>());
+            mdns.Start(app.Lifetime.ApplicationStopping);
+            app.Lifetime.ApplicationStopping.Register(() => mdns.DisposeAsync().AsTask().GetAwaiter().GetResult());
+        }
+
         return runtime;
     }
 
@@ -480,7 +502,7 @@ internal static class RuntimeInitializationExtensions
 
             // Communication & data tools
             new MessageTool(services.Pipeline),
-            new XSearchTool(config),
+            new XSearchTool(),
             new MemoryGetTool(services.MemoryStore),
             new ProfileWriteTool(services.UserProfileStore),
             new SessionsYieldTool(services.SessionManager, services.Pipeline, services.MemoryStore),

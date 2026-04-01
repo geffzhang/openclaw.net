@@ -62,7 +62,25 @@ public sealed partial class SlackChannel : IChannelAdapter
             request.Content = JsonContent.Create(payload, SlackJsonContext.Default.SlackPostMessageRequest);
 
             var response = await _http.SendAsync(request, ct);
+
+            if ((int)response.StatusCode == 429)
+            {
+                var retryAfter = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(1);
+                _logger.LogWarning("Slack rate limited for {Channel}. Retry-After: {RetryAfter}s.", outbound.RecipientId, retryAfter.TotalSeconds);
+                return;
+            }
+
             response.EnsureSuccessStatusCode();
+
+            // Slack returns 200 with ok=false for application-level errors
+            var responseBody = await response.Content.ReadAsStringAsync(ct);
+            using var doc = JsonDocument.Parse(responseBody);
+            if (doc.RootElement.TryGetProperty("ok", out var okProp) && okProp.ValueKind == JsonValueKind.False)
+            {
+                var error = doc.RootElement.TryGetProperty("error", out var e) ? e.GetString() : "unknown";
+                _logger.LogError("Slack API error sending to {Channel}: {Error}", outbound.RecipientId, error);
+                return;
+            }
 
             _logger.LogInformation("Sent Slack message to {Channel}", outbound.RecipientId);
         }

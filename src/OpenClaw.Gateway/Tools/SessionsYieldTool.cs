@@ -39,6 +39,10 @@ internal sealed class SessionsYieldTool : IToolWithContext
         if (string.IsNullOrWhiteSpace(sessionId))
             return "Error: 'session_id' is required.";
 
+        // Prevent self-yield deadlock
+        if (string.Equals(sessionId, context.Session.Id, StringComparison.Ordinal))
+            return "Error: Cannot yield to the current session (would deadlock).";
+
         var message = GetString(root, "message");
         if (string.IsNullOrWhiteSpace(message))
             return "Error: 'message' is required.";
@@ -73,21 +77,25 @@ internal sealed class SessionsYieldTool : IToolWithContext
 
         try
         {
+            var pollDelay = 500;
+            var storeFallbackDone = false;
             while (!timeoutCts.Token.IsCancellationRequested)
             {
-                await Task.Delay(500, timeoutCts.Token);
+                await Task.Delay(pollDelay, timeoutCts.Token);
+                pollDelay = Math.Min(pollDelay + 250, 2000); // backoff to 2s max
 
-                // Re-fetch the session (it may have been updated by the worker)
+                // Check active sessions first (O(n) but avoids disk I/O)
                 var updated = _sessions.TryGetActiveById(sessionId);
-                if (updated is null)
+
+                // Only try store once if session was evicted from active cache
+                if (updated is null && !storeFallbackDone)
                 {
-                    // Try loading from store in case it was persisted and evicted
                     updated = await _store.GetSessionAsync(sessionId, timeoutCts.Token);
+                    storeFallbackDone = true;
                 }
 
                 if (updated is not null && updated.History.Count > turnCountBefore)
                 {
-                    // Find the latest assistant turn
                     for (var i = updated.History.Count - 1; i >= turnCountBefore; i--)
                     {
                         if (string.Equals(updated.History[i].Role, "assistant", StringComparison.Ordinal))

@@ -56,13 +56,21 @@ public sealed class ApplyPatchTool : ITool
             if (startLine < 0 || startLine > result.Count)
                 return $"Error: Hunk at line {hunk.OriginalStart} is out of range (file has {result.Count} lines).";
 
-            // Remove old lines
-            var removeCount = Math.Min(hunk.RemoveLines.Count, result.Count - startLine);
-            for (var i = 0; i < removeCount; i++)
+            // Validate removed lines match file content
+            if (startLine + hunk.RemoveLines.Count > result.Count)
+                return $"Error: Hunk at line {hunk.OriginalStart} expects {hunk.RemoveLines.Count} lines to remove, but only {result.Count - startLine} lines remain.";
+
+            for (var i = 0; i < hunk.RemoveLines.Count; i++)
             {
-                if (startLine < result.Count)
-                    result.RemoveAt(startLine);
+                var expected = hunk.RemoveLines[i];
+                var actual = result[startLine + i];
+                if (!string.Equals(expected.TrimEnd(), actual.TrimEnd(), StringComparison.Ordinal))
+                    return $"Error: Hunk at line {hunk.OriginalStart + i} mismatch. Expected: \"{Truncate(expected, 60)}\" Got: \"{Truncate(actual, 60)}\"";
             }
+
+            // Remove old lines (validated above)
+            for (var i = 0; i < hunk.RemoveLines.Count; i++)
+                result.RemoveAt(startLine);
 
             // Insert new lines
             for (var i = hunk.AddLines.Count - 1; i >= 0; i--)
@@ -132,6 +140,9 @@ public sealed class ApplyPatchTool : ITool
         if (end < 0) end = header.Length;
         return int.TryParse(header.AsSpan(idx + 1, end - idx - 1), out var start) ? start : 1;
     }
+
+    private static string Truncate(string s, int maxLen)
+        => s.Length <= maxLen ? s : s[..maxLen] + "…";
 
     private static string? GetString(System.Text.Json.JsonElement root, string property)
         => root.TryGetProperty(property, out var el) && el.ValueKind == System.Text.Json.JsonValueKind.String

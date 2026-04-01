@@ -47,7 +47,7 @@ internal sealed class SessionStatusTool : IToolWithContext
         sb.AppendLine($"  Tokens (in/out): {session.TotalInputTokens}/{session.TotalOutputTokens}");
         sb.AppendLine($"  Created: {session.CreatedAt:u}");
         sb.AppendLine($"  Last Active: {session.LastActiveAt:u}");
-        sb.AppendLine($"  Duration: {duration.Hours}h {duration.Minutes}m");
+        sb.AppendLine($"  Duration: {(int)duration.TotalHours}h {duration.Minutes}m");
 
         if (session.ModelOverride is not null)
             sb.AppendLine($"  Model Override: {session.ModelOverride}");

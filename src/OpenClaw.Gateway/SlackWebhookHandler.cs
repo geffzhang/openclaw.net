@@ -89,8 +89,11 @@ internal sealed class SlackWebhookHandler
             return new WebhookResponse(200, "OK");
 
         // Workspace allowlist
-        if (_config.AllowedWorkspaceIds.Length > 0 && !string.IsNullOrWhiteSpace(wrapper.TeamId))
+        if (_config.AllowedWorkspaceIds.Length > 0)
         {
+            if (string.IsNullOrWhiteSpace(wrapper.TeamId))
+                return new WebhookResponse(400, "Missing team_id.");
+
             if (!Array.Exists(_config.AllowedWorkspaceIds, id => string.Equals(id, wrapper.TeamId, StringComparison.Ordinal)))
             {
                 _logger.LogWarning("Rejected Slack message from disallowed workspace {TeamId}.", wrapper.TeamId);
@@ -180,8 +183,10 @@ internal sealed class SlackWebhookHandler
         if (string.IsNullOrWhiteSpace(userId))
             return new WebhookResponse(400, "Missing user_id.");
 
-        if (_config.AllowedWorkspaceIds.Length > 0 && !string.IsNullOrWhiteSpace(teamId))
+        if (_config.AllowedWorkspaceIds.Length > 0)
         {
+            if (string.IsNullOrWhiteSpace(teamId))
+                return new WebhookResponse(400, "Missing team_id.");
             if (!Array.Exists(_config.AllowedWorkspaceIds, id => string.Equals(id, teamId, StringComparison.Ordinal)))
                 return new WebhookResponse(403);
         }
@@ -243,15 +248,18 @@ internal sealed class SlackWebhookHandler
             string.IsNullOrWhiteSpace(providedSignature))
             return false;
 
-        // Prevent replay attacks: reject requests older than 5 minutes
-        if (long.TryParse(timestamp, out var ts))
+        // Prevent replay attacks: reject requests with invalid or stale timestamps
+        if (!long.TryParse(timestamp, out var ts))
         {
-            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-            if (Math.Abs(now - ts) > 300)
-            {
-                _logger.LogWarning("Rejected Slack webhook with stale timestamp ({Timestamp}).", timestamp);
-                return false;
-            }
+            _logger.LogWarning("Rejected Slack webhook with invalid timestamp format ({Timestamp}).", timestamp);
+            return false;
+        }
+
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        if (Math.Abs(now - ts) > 300)
+        {
+            _logger.LogWarning("Rejected Slack webhook with stale timestamp ({Timestamp}).", timestamp);
+            return false;
         }
 
         var baseString = $"v0:{timestamp}:{body}";

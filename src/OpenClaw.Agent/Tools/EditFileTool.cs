@@ -30,8 +30,8 @@ public sealed class EditFileTool : ITool
             return "Error: 'path' is required.";
 
         var oldText = GetString(root, "old_text");
-        if (oldText is null)
-            return "Error: 'old_text' is required.";
+        if (oldText is null || oldText.Length == 0)
+            return "Error: 'old_text' is required and must not be empty.";
 
         var newText = GetString(root, "new_text");
         if (newText is null)

@@ -217,16 +217,28 @@ public sealed class SignalChannel : IChannelAdapter
                 _logger.LogInformation("Started signal-cli daemon for {Account}.", _accountNumber);
                 backoff = TimeSpan.FromSeconds(1);
 
-                using var reader = process.StandardOutput;
-                while (!ct.IsCancellationRequested)
+                try
                 {
-                    var line = await reader.ReadLineAsync(ct);
-                    if (line is null) break;
+                    using var reader = process.StandardOutput;
+                    while (!ct.IsCancellationRequested)
+                    {
+                        var line = await reader.ReadLineAsync(ct);
+                        if (line is null) break;
 
-                    await ProcessSignalCliMessageAsync(line, ct);
+                        await ProcessSignalCliMessageAsync(line, ct);
+                    }
+                }
+                finally
+                {
+                    // Ensure the daemon process is terminated to avoid orphans
+                    if (!process.HasExited)
+                    {
+                        try { process.Kill(entireProcessTree: true); }
+                        catch { /* best effort */ }
+                    }
                 }
 
-                await process.WaitForExitAsync(ct);
+                await process.WaitForExitAsync(CancellationToken.None);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -282,11 +294,17 @@ public sealed class SignalChannel : IChannelAdapter
         var psi = new System.Diagnostics.ProcessStartInfo
         {
             FileName = cliPath,
-            Arguments = $"-u {_accountNumber} send -m \"{EscapeJson(text)}\" {recipient}",
             RedirectStandardOutput = true,
             UseShellExecute = false,
             CreateNoWindow = true
         };
+
+        psi.ArgumentList.Add("-u");
+        psi.ArgumentList.Add(_accountNumber);
+        psi.ArgumentList.Add("send");
+        psi.ArgumentList.Add("-m");
+        psi.ArgumentList.Add(text);
+        psi.ArgumentList.Add(recipient);
 
         using var process = System.Diagnostics.Process.Start(psi);
         if (process is not null)

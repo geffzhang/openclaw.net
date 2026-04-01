@@ -585,6 +585,10 @@ public sealed class GmailPubSubConfig
     public string WebhookPath { get; set; } = "/gmail/push";
     public string? SessionId { get; set; }
     public string Prompt { get; set; } = "A new email notification was received. Check inbox and triage.";
+
+    /// <summary>Shared secret token for authenticating push requests. Set as a query param or header.</summary>
+    public string? WebhookSecret { get; set; }
+    public string WebhookSecretRef { get; set; } = "env:GMAIL_PUBSUB_SECRET";
 }
 
 // ── mDNS/Bonjour Discovery ─────────────────────────────────────

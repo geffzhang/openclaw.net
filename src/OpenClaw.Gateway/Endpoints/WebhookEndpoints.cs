@@ -459,8 +459,22 @@ internal static class WebhookEndpoints
                     return;
                 }
 
-                var deliveryKey = ctx.Request.Headers["X-Slack-Request-Timestamp"].ToString() + ":" +
-                    (bodyText.Length > 64 ? bodyText[..64] : bodyText);
+                // Use event_id from payload for stable dedup (falls back to timestamp+prefix)
+                string deliveryKey;
+                try
+                {
+                    using var dedupDoc = System.Text.Json.JsonDocument.Parse(bodyText);
+                    var dedupRoot = dedupDoc.RootElement;
+                    if (dedupRoot.TryGetProperty("event_id", out var eventIdProp) &&
+                        eventIdProp.ValueKind == System.Text.Json.JsonValueKind.String)
+                        deliveryKey = eventIdProp.GetString()!;
+                    else
+                        deliveryKey = timestamp + ":" + (bodyText.Length > 64 ? bodyText[..64] : bodyText);
+                }
+                catch
+                {
+                    deliveryKey = timestamp + ":" + (bodyText.Length > 64 ? bodyText[..64] : bodyText);
+                }
                 var hashedKey = WebhookDeliveryStore.HashDeliveryKey(deliveryKey);
                 if (!deliveries.TryBegin("slack", hashedKey, TimeSpan.FromHours(6)))
                 {
@@ -677,8 +691,25 @@ internal static class WebhookEndpoints
                 runtime.Pipeline,
                 app.Services.GetRequiredService<Microsoft.Extensions.Logging.ILogger<GmailPubSubBridge>>());
 
+            var gmailSecret = SecretResolver.Resolve(startup.Config.GmailPubSub.WebhookSecretRef)
+                ?? startup.Config.GmailPubSub.WebhookSecret;
+
             app.MapPost(startup.Config.GmailPubSub.WebhookPath, async (HttpContext ctx) =>
             {
+                // Verify shared secret if configured
+                if (!string.IsNullOrWhiteSpace(gmailSecret))
+                {
+                    var providedToken = ctx.Request.Query["token"].ToString();
+                    if (string.IsNullOrWhiteSpace(providedToken))
+                        providedToken = ctx.Request.Headers["X-OpenClaw-Secret"].ToString();
+
+                    if (!string.Equals(providedToken, gmailSecret, StringComparison.Ordinal))
+                    {
+                        ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                        return;
+                    }
+                }
+
                 var (bodyOk, bodyText) = await EndpointHelpers.TryReadBodyTextAsync(ctx, 64 * 1024, ctx.RequestAborted);
                 if (!bodyOk)
                 {

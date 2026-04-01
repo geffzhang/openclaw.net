@@ -147,13 +147,24 @@ internal sealed class DiscordWebhookHandler
     /// <summary>
     /// Validates the Discord Ed25519 signature.
     /// The signed message is: timestamp + body.
-    /// Uses a minimal TweetNaCl-compatible Ed25519 verification.
+    /// Uses BouncyCastle Ed25519 verification.
     /// </summary>
     private bool ValidateSignature(string body, string? signature, string? timestamp)
     {
         if (_publicKeyBytes is null || _publicKeyBytes.Length != 32 ||
             string.IsNullOrWhiteSpace(signature) || string.IsNullOrWhiteSpace(timestamp))
             return false;
+
+        // Reject stale timestamps (5-minute window) to prevent replay attacks
+        if (long.TryParse(timestamp, out var ts))
+        {
+            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            if (Math.Abs(now - ts) > 300)
+            {
+                _logger.LogWarning("Rejected Discord interaction with stale timestamp ({Timestamp}).", timestamp);
+                return false;
+            }
+        }
 
         try
         {

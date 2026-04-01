@@ -15,7 +15,7 @@ public sealed class XSearchTool : ITool, IDisposable
     private readonly HttpClient _http;
     private readonly string? _bearerToken;
 
-    public XSearchTool(GatewayConfig config)
+    public XSearchTool()
     {
         _http = HttpClientFactory.Create();
         _bearerToken = SecretResolver.Resolve("env:X_BEARER_TOKEN");
