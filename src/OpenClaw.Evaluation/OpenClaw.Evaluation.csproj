@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>OpenClaw.Evaluation</RootNamespace>
+    <IsAotCompatible>true</IsAotCompatible>
+    <IsPackable>true</IsPackable>
+    <PackageId>OpenClaw.Evaluation</PackageId>
+    <Description>Evaluation framework for OpenClaw.NET agent runtime — trace extraction, fluent tool-usage assertions, and telemetry bridging for automated quality gates.</Description>
+    <PackageTags>openclaw;ai;agent;evaluation;testing;llm</PackageTags>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpenClaw.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\OpenClaw.Core\OpenClaw.Core.csproj" />
+  </ItemGroup>
+</Project>

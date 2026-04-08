@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\OpenClaw.Core\OpenClaw.Core.csproj" />
+    <ProjectReference Include="..\OpenClaw.Evaluation\OpenClaw.Evaluation.csproj" />
     <ProjectReference Include="..\OpenClaw.Agent\OpenClaw.Agent.csproj" />
     <ProjectReference Include="..\OpenClaw.Channels\OpenClaw.Channels.csproj" />
     <ProjectReference Include="..\OpenClaw.Cli\OpenClaw.Cli.csproj" />
