@@ -21,6 +21,7 @@
     <Project Path="src/OpenClaw.WhatsApp.BaileysWorker/OpenClaw.WhatsApp.BaileysWorker.csproj" />
   </Folder>
   <Project Path="src/OpenClaw.Agent/OpenClaw.Agent.csproj" />
+  <Project Path="src/OpenClaw.AgentEval.Tests/OpenClaw.AgentEval.Tests.csproj" />
   <Project Path="src/OpenClaw.Channels/OpenClaw.Channels.csproj" />
   <Project Path="src/OpenClaw.Core/OpenClaw.Core.csproj" />
   <Project Path="src/OpenClaw.Gateway/OpenClaw.Gateway.csproj" />

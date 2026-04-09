@@ -1,0 +1,36 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <OpenClawEnableMafExperiment>true</OpenClawEnableMafExperiment>
+    <DefineConstants>$(DefineConstants);OPENCLAW_ENABLE_MAF_EXPERIMENT</DefineConstants>
+    <RootNamespace>OpenClaw.AgentEval.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenClaw.Agent\OpenClaw.Agent.csproj" />
+    <ProjectReference Include="..\OpenClaw.Core\OpenClaw.Core.csproj" />
+    <ProjectReference Include="..\OpenClaw.Evaluation\OpenClaw.Evaluation.csproj" />
+    <ProjectReference Include="..\OpenClaw.MicrosoftAgentFrameworkAdapter\OpenClaw.MicrosoftAgentFrameworkAdapter.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AgentEval" Version="0.6.0-beta" />
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.4.1" />
+    <PackageReference Include="Microsoft.Extensions.AI.Evaluation" Version="10.4.0" />
+    <PackageReference Include="Microsoft.Extensions.AI.Evaluation.Quality" Version="10.4.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.5" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="OpenTelemetry.Exporter.InMemory" Version="1.15.1" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.15.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="FluentAssertions" Version="6.12.0" />
+  </ItemGroup>
+</Project>

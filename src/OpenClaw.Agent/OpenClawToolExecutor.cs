@@ -118,22 +118,14 @@ public sealed class OpenClawToolExecutor
     {
         using var activity = Telemetry.ActivitySource.StartActivity("Agent.ExecuteTool");
         activity?.SetTag("tool.name", toolName);
+        activity?.SetTag("session.id", session.Id);
+        activity?.SetTag("channel.id", session.ChannelId);
+        if (!string.IsNullOrWhiteSpace(callId))
+            activity?.SetTag("tool.call_id", callId);
 
         if (!_toolsByName.TryGetValue(toolName, out var tool))
         {
-            var unknown = new ToolInvocation
-            {
-                ToolName = toolName,
-                Arguments = argsJson,
-                Result = "Error: Unknown tool",
-                Duration = TimeSpan.Zero
-            };
-
-            return new ToolExecutionResult
-            {
-                Invocation = unknown,
-                ResultText = unknown.Result!
-            };
+            return CreateImmediateResult(toolName, argsJson, "Error: Unknown tool", activity, isSuccessful: false);
         }
 
         var preset = _toolPresetResolver?.Resolve(session, _toolsByName.Keys);
@@ -143,7 +135,7 @@ public sealed class OpenClawToolExecutor
                 ? $"Tool '{tool.Name}' is not allowed for preset '{preset.PresetId}'."
                 : $"Tool '{tool.Name}' is not allowed for this session.";
             _logger?.LogInformation("[{CorrelationId}] {Message}", turnCtx.CorrelationId, deniedByPreset);
-            return CreateImmediateResult(toolName, argsJson, deniedByPreset);
+            return CreateImmediateResult(toolName, argsJson, deniedByPreset, activity, isSuccessful: false);
         }
 
         var hookCtx = new ToolHookContext
@@ -168,7 +160,7 @@ public sealed class OpenClawToolExecutor
                 {
                     var deniedByHook = $"Tool execution denied by hook: {hook.Name}";
                     _logger?.LogInformation("[{CorrelationId}] {Message}", turnCtx.CorrelationId, deniedByHook);
-                    return CreateImmediateResult(toolName, argsJson, deniedByHook);
+                    return CreateImmediateResult(toolName, argsJson, deniedByHook, activity, isSuccessful: false);
                 }
             }
             catch (Exception ex)
@@ -196,7 +188,7 @@ public sealed class OpenClawToolExecutor
                 if (!approved)
                 {
                     _logger?.LogInformation("[{CorrelationId}] Tool {Tool} denied by user", turnCtx.CorrelationId, tool.Name);
-                    return CreateImmediateResult(toolName, argsJson, "Tool execution denied by user.");
+                    return CreateImmediateResult(toolName, argsJson, "Tool execution denied by user.", activity, isSuccessful: false);
                 }
             }
             else
@@ -208,7 +200,9 @@ public sealed class OpenClawToolExecutor
                 return CreateImmediateResult(
                     toolName,
                     argsJson,
-                    "Tool requires approval but no approval channel is available. Please confirm you want to execute this action.");
+                    "Tool requires approval but no approval channel is available. Please confirm you want to execute this action.",
+                    activity,
+                    isSuccessful: false);
             }
         }
 
@@ -259,6 +253,7 @@ public sealed class OpenClawToolExecutor
             tool.Name,
             sw.Elapsed.TotalMilliseconds,
             !toolFailed);
+        FinalizeActivity(activity, !toolFailed, toolTimedOut, toolFailed ? result : null);
 
         foreach (var hook in _hooks)
         {
@@ -290,8 +285,16 @@ public sealed class OpenClawToolExecutor
         };
     }
 
-    private static ToolExecutionResult CreateImmediateResult(string toolName, string argsJson, string result)
+    private static ToolExecutionResult CreateImmediateResult(
+        string toolName,
+        string argsJson,
+        string result,
+        Activity? activity,
+        bool isSuccessful,
+        bool isTimedOut = false)
     {
+        FinalizeActivity(activity, isSuccessful, isTimedOut, isSuccessful ? null : result);
+
         var invocation = new ToolInvocation
         {
             ToolName = toolName,
@@ -305,6 +308,22 @@ public sealed class OpenClawToolExecutor
             Invocation = invocation,
             ResultText = result
         };
+    }
+
+    private static void FinalizeActivity(Activity? activity, bool isSuccessful, bool isTimedOut, string? errorMessage)
+    {
+        if (activity is null)
+            return;
+
+        activity.SetTag("ok", isSuccessful ? bool.TrueString : bool.FalseString);
+        activity.SetTag("timed_out", isTimedOut ? bool.TrueString : bool.FalseString);
+
+        if (!string.IsNullOrWhiteSpace(errorMessage))
+            activity.SetTag("error.message", errorMessage);
+
+        activity.SetStatus(
+            isSuccessful ? ActivityStatusCode.Ok : ActivityStatusCode.Error,
+            string.IsNullOrWhiteSpace(errorMessage) ? null : errorMessage);
     }
 
     private static bool IsToolAllowedForSession(Session session, string toolName, ResolvedToolPreset? preset)
