@@ -11,7 +11,8 @@ namespace OpenClaw.Gateway;
 
 internal sealed class FeishuWebhookHandler
 {
-    private const string UnsupportedEncryptMessage = "你配置了Encrypt Key，请关闭该功能。";
+    private const int SignatureMaxSkewSeconds = 300;
+    private const string UnsupportedEncryptMessage = "Encrypt payloads are not supported yet. 你配置了Encrypt Key，请关闭该功能。";
 
     private readonly FeishuChannelConfig _config;
     private readonly AllowlistManager _allowlists;
@@ -131,7 +132,7 @@ internal sealed class FeishuWebhookHandler
             SenderId = senderId,
             Text = text.Trim(),
             MessageId = message.MessageId,
-            ReplyToMessageId = message.ParentId ?? message.RootId,
+            ReplyToMessageId = threadRoot,
             IsGroup = !isDm,
             GroupId = isDm ? null : message.ChatId,
             SessionId = !string.IsNullOrWhiteSpace(threadRoot) && !string.IsNullOrWhiteSpace(message.ChatId)
@@ -174,7 +175,7 @@ internal sealed class FeishuWebhookHandler
 
         if (!long.TryParse(timestamp, out var ts))
             return false;
-        if (Math.Abs(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - ts) > 300)
+        if (Math.Abs(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - ts) > SignatureMaxSkewSeconds)
             return false;
 
         var hash = HMACSHA256.HashData(

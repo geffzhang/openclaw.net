@@ -64,9 +64,8 @@ public sealed class FeishuChannelTests
 
     private sealed class CallbackHandler(Func<HttpRequestMessage, HttpResponseMessage> callback) : HttpMessageHandler
     {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken _)
         {
-            _ = cancellationToken;
             return Task.FromResult(callback(request));
         }
     }

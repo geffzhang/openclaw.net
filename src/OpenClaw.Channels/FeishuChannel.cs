@@ -156,6 +156,8 @@ internal sealed class FeishuTenantAccessTokenManager(
     string appSecret,
     ILogger logger)
 {
+    private const int MinimumTokenLifetimeSeconds = 60;
+    private const int TokenRefreshBufferSeconds = 300;
     private readonly SemaphoreSlim _refreshGate = new(1, 1);
     private string? _token;
     private DateTimeOffset _expiresAt;
@@ -190,7 +192,7 @@ internal sealed class FeishuTenantAccessTokenManager(
                 throw new InvalidOperationException(payload.Msg ?? $"Feishu tenant token error {payload.Code}.");
 
             _token = payload.TenantAccessToken;
-            _expiresAt = DateTimeOffset.UtcNow.AddSeconds(Math.Max(60, payload.Expire - 300));
+            _expiresAt = DateTimeOffset.UtcNow.AddSeconds(Math.Max(MinimumTokenLifetimeSeconds, payload.Expire - TokenRefreshBufferSeconds));
             LastRefreshError = null;
             return _token;
         }
