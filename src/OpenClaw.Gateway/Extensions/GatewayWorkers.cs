@@ -376,6 +376,7 @@ internal static class GatewayWorkers
                             if (msg.ChannelId == "whatsapp") policy = config.Channels.WhatsApp.DmPolicy;
                             if (msg.ChannelId == "teams") policy = config.Channels.Teams.DmPolicy;
                             if (msg.ChannelId == "slack") policy = config.Channels.Slack.DmPolicy;
+                            if (msg.ChannelId == "feishu") policy = config.Channels.Feishu.DmPolicy;
                             if (msg.ChannelId == "discord") policy = config.Channels.Discord.DmPolicy;
                             if (msg.ChannelId == "signal") policy = config.Channels.Signal.DmPolicy;
 

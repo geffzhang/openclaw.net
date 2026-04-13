@@ -325,6 +325,24 @@ public static class ConfigValidator
             if (string.IsNullOrWhiteSpace(teamsTenantId))
                 errors.Add("Channels.Teams.TenantId/TenantIdRef must be configured when Teams is enabled.");
         }
+        if (config.Channels.Feishu.MaxInboundChars < 1)
+            errors.Add($"Channels.Feishu.MaxInboundChars must be >= 1 (got {config.Channels.Feishu.MaxInboundChars}).");
+        if (config.Channels.Feishu.MaxRequestBytes < 1024)
+            errors.Add($"Channels.Feishu.MaxRequestBytes must be >= 1024 (got {config.Channels.Feishu.MaxRequestBytes}).");
+        if (config.Channels.Feishu.RenderMode is not ("auto" or "text" or "interactive"))
+            errors.Add("Channels.Feishu.RenderMode must be 'auto', 'text', or 'interactive'.");
+        if (config.Channels.Feishu.Enabled)
+        {
+            var feishuAppId = SecretResolver.Resolve(config.Channels.Feishu.AppIdRef) ?? config.Channels.Feishu.AppId;
+            var feishuAppSecret = SecretResolver.Resolve(config.Channels.Feishu.AppSecretRef) ?? config.Channels.Feishu.AppSecret;
+            var feishuVerificationToken = SecretResolver.Resolve(config.Channels.Feishu.VerificationTokenRef) ?? config.Channels.Feishu.VerificationToken;
+            if (string.IsNullOrWhiteSpace(feishuAppId))
+                errors.Add("Channels.Feishu.AppId/AppIdRef must be configured when Feishu is enabled.");
+            if (string.IsNullOrWhiteSpace(feishuAppSecret))
+                errors.Add("Channels.Feishu.AppSecret/AppSecretRef must be configured when Feishu is enabled.");
+            if (config.Channels.Feishu.ValidateSignature && string.IsNullOrWhiteSpace(feishuVerificationToken))
+                errors.Add("Channels.Feishu.ValidateSignature is true but VerificationToken/VerificationTokenRef is not configured.");
+        }
         if (!config.Channels.AllowlistSemantics.Equals("legacy", StringComparison.OrdinalIgnoreCase) &&
             !config.Channels.AllowlistSemantics.Equals("strict", StringComparison.OrdinalIgnoreCase))
         {
@@ -335,6 +353,7 @@ public static class ConfigValidator
         ValidateDmPolicy("Channels.WhatsApp.DmPolicy", config.Channels.WhatsApp.DmPolicy, errors);
         ValidateDmPolicy("Channels.Teams.DmPolicy", config.Channels.Teams.DmPolicy, errors);
         ValidateDmPolicy("Channels.Slack.DmPolicy", config.Channels.Slack.DmPolicy, errors);
+        ValidateDmPolicy("Channels.Feishu.DmPolicy", config.Channels.Feishu.DmPolicy, errors);
         ValidateDmPolicy("Channels.Discord.DmPolicy", config.Channels.Discord.DmPolicy, errors);
         ValidateDmPolicy("Channels.Signal.DmPolicy", config.Channels.Signal.DmPolicy, errors);
 

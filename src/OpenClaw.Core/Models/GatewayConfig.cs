@@ -342,6 +342,7 @@ public sealed class ChannelsConfig
     public WhatsAppChannelConfig WhatsApp { get; set; } = new();
     public TeamsChannelConfig Teams { get; set; } = new();
     public SlackChannelConfig Slack { get; set; } = new();
+    public FeishuChannelConfig Feishu { get; set; } = new();
     public DiscordChannelConfig Discord { get; set; } = new();
     public SignalChannelConfig Signal { get; set; } = new();
 }
@@ -547,6 +548,30 @@ public sealed class SlackChannelConfig
     public int MaxInboundChars { get; set; } = 4096;
     public int MaxRequestBytes { get; set; } = 64 * 1024;
     public bool ValidateSignature { get; set; } = true;
+}
+
+public sealed class FeishuChannelConfig
+{
+    public bool Enabled { get; set; } = false;
+    public string DmPolicy { get; set; } = "pairing"; // open, pairing, closed
+    public string? AppId { get; set; }
+    public string AppIdRef { get; set; } = "env:FEISHU_APP_ID";
+    public string? AppSecret { get; set; }
+    public string AppSecretRef { get; set; } = "env:FEISHU_APP_SECRET";
+    public string? BotOpenId { get; set; }
+    public string BotOpenIdRef { get; set; } = "env:FEISHU_BOT_OPEN_ID";
+    public string? VerificationToken { get; set; }
+    public string VerificationTokenRef { get; set; } = "env:FEISHU_VERIFICATION_TOKEN";
+    public string? EncryptKey { get; set; }
+    public string EncryptKeyRef { get; set; } = "env:FEISHU_ENCRYPT_KEY";
+    public string WebhookPath { get; set; } = "/feishu/events";
+    public string[] AllowedFromUserIds { get; set; } = [];
+    public string[] AllowedChatIds { get; set; } = [];
+    public int MaxInboundChars { get; set; } = 4096;
+    public int MaxRequestBytes { get; set; } = 64 * 1024;
+    public bool ValidateSignature { get; set; } = true;
+    public bool RequireMention { get; set; } = true;
+    public string RenderMode { get; set; } = "auto"; // auto, text, interactive
 }
 
 public sealed class DiscordChannelConfig

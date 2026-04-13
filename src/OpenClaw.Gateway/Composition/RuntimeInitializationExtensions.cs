@@ -277,6 +277,9 @@ internal static class RuntimeInitializationExtensions
         if (config.Channels.Slack.Enabled)
             channelAdapters["slack"] = app.Services.GetRequiredService<SlackChannel>();
 
+        if (config.Channels.Feishu.Enabled)
+            channelAdapters["feishu"] = app.Services.GetRequiredService<FeishuChannel>();
+
         if (config.Channels.Discord.Enabled)
             channelAdapters["discord"] = app.Services.GetRequiredService<DiscordChannel>();
 

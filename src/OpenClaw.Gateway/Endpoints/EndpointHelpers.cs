@@ -156,6 +156,7 @@ internal static class EndpointHelpers
         {
             "telegram" => new ChannelAllowlistFile { AllowedFrom = config.Channels.Telegram.AllowedFromUserIds },
             "whatsapp" => new ChannelAllowlistFile { AllowedFrom = config.Channels.WhatsApp.AllowedFromIds },
+            "feishu" => new ChannelAllowlistFile { AllowedFrom = config.Channels.Feishu.AllowedFromUserIds },
             "sms" => new ChannelAllowlistFile
             {
                 AllowedFrom = config.Channels.Sms.Twilio.AllowedFromNumbers,

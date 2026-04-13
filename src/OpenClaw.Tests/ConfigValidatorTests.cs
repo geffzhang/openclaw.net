@@ -173,6 +173,29 @@ public sealed class ConfigValidatorTests
     }
 
     [Fact]
+    public void Validate_FeishuEnabledWithoutCredentials_ReturnsErrors()
+    {
+        var config = new GatewayConfig
+        {
+            Channels = new ChannelsConfig
+            {
+                Feishu = new FeishuChannelConfig
+                {
+                    Enabled = true,
+                    AppIdRef = "",
+                    AppSecretRef = "",
+                    VerificationTokenRef = ""
+                }
+            }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+        Assert.Contains(errors, e => e.Contains("Channels.Feishu.AppId", StringComparison.Ordinal));
+        Assert.Contains(errors, e => e.Contains("Channels.Feishu.AppSecret", StringComparison.Ordinal));
+        Assert.Contains(errors, e => e.Contains("Channels.Feishu.ValidateSignature", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Validate_RetentionLimitsBelowMinimum_ReturnsErrors()
     {
         var config = new GatewayConfig

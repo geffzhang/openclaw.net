@@ -11,7 +11,8 @@ internal static class ChannelReadinessEvaluator
         [
             EvaluateSms(config, isNonLoopbackBind),
             EvaluateTelegram(config, isNonLoopbackBind),
-            EvaluateWhatsApp(config, isNonLoopbackBind)
+            EvaluateWhatsApp(config, isNonLoopbackBind),
+            EvaluateFeishu(config, isNonLoopbackBind)
         ];
     }
 
@@ -269,6 +270,76 @@ internal static class ChannelReadinessEvaluator
         }
 
         return ChannelReadinessState.From("whatsapp", "WhatsApp", whatsapp.Type, missing, warnings, guidance);
+    }
+
+    private static ChannelReadinessState EvaluateFeishu(GatewayConfig config, bool isNonLoopbackBind)
+    {
+        var feishu = config.Channels.Feishu;
+        if (!feishu.Enabled)
+        {
+            return ChannelReadinessState.Disabled("feishu", "Feishu", "official", [
+                new ChannelFixGuidance
+                {
+                    Label = "Enable Feishu channel",
+                    Href = "#feishu-enabled-input",
+                    Reference = "OpenClaw:Channels:Feishu:Enabled"
+                }
+            ]);
+        }
+
+        var missing = new List<string>();
+        var warnings = new List<string>();
+        var guidance = new List<ChannelFixGuidance>();
+
+        if (string.IsNullOrWhiteSpace(ResolveSecretRefOrNull(feishu.AppIdRef) ?? feishu.AppId))
+        {
+            missing.Add("Feishu AppId or AppIdRef");
+            guidance.Add(new ChannelFixGuidance
+            {
+                Label = "Set Feishu app id",
+                Href = "#setup-ref-feishu-app-id",
+                Reference = "OpenClaw:Channels:Feishu:AppIdRef = env:FEISHU_APP_ID"
+            });
+        }
+
+        if (string.IsNullOrWhiteSpace(ResolveSecretRefOrNull(feishu.AppSecretRef) ?? feishu.AppSecret))
+        {
+            missing.Add("Feishu AppSecret or AppSecretRef");
+            guidance.Add(new ChannelFixGuidance
+            {
+                Label = "Set Feishu app secret",
+                Href = "#setup-ref-feishu-app-secret",
+                Reference = "OpenClaw:Channels:Feishu:AppSecretRef = env:FEISHU_APP_SECRET"
+            });
+        }
+
+        if (feishu.ValidateSignature)
+        {
+            if (string.IsNullOrWhiteSpace(ResolveSecretRefOrNull(feishu.VerificationTokenRef) ?? feishu.VerificationToken))
+            {
+                missing.Add("Feishu VerificationToken or VerificationTokenRef");
+                guidance.Add(new ChannelFixGuidance
+                {
+                    Label = "Set Feishu verification token",
+                    Href = "#setup-ref-feishu-verification-token",
+                    Reference = "OpenClaw:Channels:Feishu:VerificationTokenRef = env:FEISHU_VERIFICATION_TOKEN"
+                });
+            }
+        }
+        else
+        {
+            warnings.Add(isNonLoopbackBind
+                ? "Feishu webhook signature validation is disabled on a public bind."
+                : "Feishu webhook signature validation is disabled.");
+            guidance.Add(new ChannelFixGuidance
+            {
+                Label = "Enable Feishu signature validation",
+                Href = "#feishu-validate-signature-input",
+                Reference = "OpenClaw:Channels:Feishu:ValidateSignature"
+            });
+        }
+
+        return ChannelReadinessState.From("feishu", "Feishu", "official", missing, warnings, guidance);
     }
 
     private static string? ResolveSecretRefOrNull(string? value)

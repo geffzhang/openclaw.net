@@ -593,6 +593,78 @@ internal static class WebhookEndpoints
             });
         }
 
+        if (startup.Config.Channels.Feishu.Enabled)
+        {
+            var feishuHandler = app.Services.GetRequiredService<FeishuWebhookHandler>();
+
+            app.MapPost(startup.Config.Channels.Feishu.WebhookPath, async (HttpContext ctx) =>
+            {
+                var maxRequestSize = Math.Max(4 * 1024, startup.Config.Channels.Feishu.MaxRequestBytes);
+                var (bodyOk, bodyText) = await EndpointHelpers.TryReadBodyTextAsync(ctx, maxRequestSize, ctx.RequestAborted);
+                if (!bodyOk)
+                {
+                    ctx.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;
+                    await ctx.Response.WriteAsync("Request too large.", ctx.RequestAborted);
+                    return;
+                }
+
+                var timestamp = ctx.Request.Headers["X-Lark-Request-Timestamp"].ToString();
+                var nonce = ctx.Request.Headers["X-Lark-Request-Nonce"].ToString();
+                var signature = ctx.Request.Headers["X-Lark-Signature"].ToString();
+                var deliveryKey = FeishuWebhookHandler.ResolveDeliveryKey(bodyText);
+
+                if (!FeishuWebhookHandler.IsUrlVerificationPayload(bodyText) &&
+                    !deliveries.TryBegin("feishu", deliveryKey, TimeSpan.FromHours(6)))
+                {
+                    ctx.Response.StatusCode = StatusCodes.Status200OK;
+                    await ctx.Response.WriteAsync("Duplicate ignored.", ctx.RequestAborted);
+                    return;
+                }
+
+                InboundMessage? replayMessage = null;
+                try
+                {
+                    var result = await feishuHandler.HandleAsync(
+                        bodyText,
+                        timestamp,
+                        nonce,
+                        signature,
+                        (msg, ct) =>
+                        {
+                            replayMessage = msg;
+                            return runtime.Pipeline.InboundWriter.WriteAsync(msg, ct);
+                        },
+                        ctx.RequestAborted);
+
+                    ctx.Response.StatusCode = result.StatusCode;
+                    if (result.ContentType is not null)
+                        ctx.Response.ContentType = result.ContentType;
+                    if (result.Body is not null)
+                        await ctx.Response.WriteAsync(result.Body, ctx.RequestAborted);
+                }
+                catch (Exception ex)
+                {
+                    deliveries.RecordDeadLetter(new WebhookDeadLetterRecord
+                    {
+                        Entry = new WebhookDeadLetterEntry
+                        {
+                            Id = $"whdl_{Guid.NewGuid():N}"[..20],
+                            Source = "feishu",
+                            DeliveryKey = deliveryKey,
+                            ChannelId = "feishu",
+                            SenderId = replayMessage?.SenderId,
+                            SessionId = replayMessage?.SessionId,
+                            Error = ex.Message,
+                            PayloadPreview = bodyText.Length <= 500 ? bodyText : bodyText[..500] + "…"
+                        },
+                        ReplayMessage = replayMessage
+                    });
+                    ctx.Response.StatusCode = StatusCodes.Status500InternalServerError;
+                    await ctx.Response.WriteAsync("Webhook processing failed.", ctx.RequestAborted);
+                }
+            });
+        }
+
         if (startup.Config.Webhooks.Enabled)
         {
             app.MapPost("/webhooks/{name}", async (HttpContext ctx, string name) =>

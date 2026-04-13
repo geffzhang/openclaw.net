@@ -66,6 +66,23 @@ internal static class ChannelServicesExtensions
             services.AddSingleton<SlackChannel>();
         }
 
+        if (config.Channels.Feishu.Enabled)
+        {
+            services.AddSingleton(config.Channels.Feishu);
+            services.AddSingleton<FeishuWebhookHandler>(sp =>
+                new FeishuWebhookHandler(
+                    config.Channels.Feishu,
+                    sp.GetRequiredService<OpenClaw.Core.Security.AllowlistManager>(),
+                    sp.GetRequiredService<OpenClaw.Core.Pipeline.RecentSendersStore>(),
+                    sp.GetRequiredService<OpenClaw.Core.Security.AllowlistSemantics>(),
+                    sp.GetRequiredService<ILogger<FeishuWebhookHandler>>()));
+            services.AddSingleton<FeishuChannel>(sp =>
+                new FeishuChannel(
+                    config.Channels.Feishu,
+                    sp.GetRequiredService<ILogger<FeishuChannel>>(),
+                    OpenClaw.Core.Http.HttpClientFactory.Create()));
+        }
+
         if (config.Channels.Discord.Enabled)
         {
             services.AddSingleton(config.Channels.Discord);

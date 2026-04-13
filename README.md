@@ -8,11 +8,11 @@
 ![NativeAOT-friendly](https://img.shields.io/badge/NativeAOT-friendly-blue)
 ![Plugin compatibility](https://img.shields.io/badge/plugin%20compatibility-practical-green)
 ![Tools](https://img.shields.io/badge/native%20tools-48-green)
-![Channels](https://img.shields.io/badge/channels-9-green)
+![Channels](https://img.shields.io/badge/channels-10-green)
 
 > **Disclaimer**: This project is not affiliated with, endorsed by, or associated with [OpenClaw](https://github.com/openclaw/openclaw). It is an independent .NET implementation inspired by their work.
 
-Self-hosted **AI agent runtime and gateway for .NET** with 48 native tools, 9 channel adapters, multi-agent routing, review-first self-evolving features, built-in OpenAI/Claude/Gemini provider support, built-in tool presets, NativeAOT support, and practical OpenClaw ecosystem compatibility.
+Self-hosted **AI agent runtime and gateway for .NET** with 48 native tools, 10 channel adapters, multi-agent routing, review-first self-evolving features, built-in OpenAI/Claude/Gemini provider support, built-in tool presets, NativeAOT support, and practical OpenClaw ecosystem compatibility.
 
 ## Why This Project Exists
 
@@ -24,7 +24,7 @@ OpenClaw.NET takes a different path:
 - **Practical reuse of existing OpenClaw TS/JS plugins and `SKILL.md` packages** — install directly with `openclaw plugins install`
 - A real **tool execution layer** with approval hooks, timeout handling, usage tracking, and optional sandbox routing
 - **48 native tools** covering file ops, sessions, memory, web search, messaging, home automation, databases, email, calendar, and more
-- **9 channel adapters** (Telegram, SMS, WhatsApp, Teams, Slack, Discord, Signal, email, webhooks) with DM policy, allowlists, and signature validation
+- **10 channel adapters** (Telegram, SMS, WhatsApp, Teams, Slack, Feishu, Discord, Signal, email, webhooks) with DM policy, allowlists, and signature validation
 - **Native LLM providers out of the box** for **OpenAI**, **Claude / Anthropic**, and **Gemini**, plus Azure OpenAI, Ollama, and OpenAI-compatible endpoints
 - **Optional Microsoft Agent Framework 1.0 orchestrator backend** in the MAF-enabled artifacts, with `native` still the default orchestrator
 - **Review-first self-evolving workflows** that can propose profile updates, automation drafts, and skill drafts from repeated successful sessions
@@ -120,7 +120,7 @@ Named presets control which tools are available per surface:
 
 Presets compose from reusable **tool groups**: `group:runtime`, `group:fs`, `group:sessions`, `group:memory`, `group:web`, `group:automation`, `group:messaging`.
 
-### 9 Channel Adapters
+### 10 Channel Adapters
 
 | Channel | Transport | Features |
 |---------|-----------|----------|
@@ -129,6 +129,7 @@ Presets compose from reusable **tool groups**: `group:runtime`, `group:fs`, `gro
 | **WhatsApp** | Webhook / Bridge | Official Cloud API + Baileys bridge, typing indicators, read receipts |
 | **Teams** | Bot Framework | JWT validation, conversation references, group/DM policy |
 | **Slack** | Events API | Thread-to-session mapping, slash commands, HMAC-SHA256, mrkdwn conversion |
+| **Feishu** | Webhook | Source-generated JSON, challenge response, HMAC validation, interactive-card fallback |
 | **Discord** | Gateway WebSocket | Persistent connection, slash commands, Ed25519 interaction webhook, rate limiting |
 | **Signal** | signald / signal-cli | Unix socket or subprocess bridge, privacy mode (no-content logging) |
 | **Email** | IMAP/SMTP | MailKit-based |
@@ -187,7 +188,7 @@ flowchart TB
 subgraph Clients
 A1[Web UI / CLI / TUI / Companion]
 A2[WebSocket / HTTP / SDK]
-A3["Channels: Telegram, SMS, WhatsApp,<br/>Teams, Slack, Discord, Signal, Email"]
+A3["Channels: Telegram, SMS, WhatsApp,<br/>Teams, Slack, Feishu, Discord, Signal, Email"]
 end
 
 subgraph "OpenClaw.NET Gateway"

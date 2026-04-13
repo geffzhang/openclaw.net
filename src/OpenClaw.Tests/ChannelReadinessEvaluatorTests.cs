@@ -89,4 +89,39 @@ public sealed class ChannelReadinessEvaluatorTests
         Assert.Contains(whatsapp.MissingRequirements, value => value.Contains("BridgeToken", StringComparison.Ordinal));
         Assert.Contains(whatsapp.FixGuidance, value => value.Href == "#setup-ref-whatsapp-bridge-token");
     }
+
+    [Fact]
+    public void Evaluate_FeishuEnabledWithoutSignatureValidation_ReturnsDegraded()
+    {
+        var previousAppId = Environment.GetEnvironmentVariable("FEISHU_APP_ID");
+        var previousAppSecret = Environment.GetEnvironmentVariable("FEISHU_APP_SECRET");
+        try
+        {
+            Environment.SetEnvironmentVariable("FEISHU_APP_ID", "cli_a1b2c3");
+            Environment.SetEnvironmentVariable("FEISHU_APP_SECRET", "secret");
+            var config = new GatewayConfig
+            {
+                Channels = new ChannelsConfig
+                {
+                    Feishu = new FeishuChannelConfig
+                    {
+                        Enabled = true,
+                        ValidateSignature = false
+                    }
+                }
+            };
+
+            var feishu = ChannelReadinessEvaluator.Evaluate(config, isNonLoopbackBind: true)
+                .Single(item => item.ChannelId == "feishu");
+
+            Assert.Equal("degraded", feishu.Status);
+            Assert.Contains(feishu.Warnings, value => value.Contains("public bind", StringComparison.Ordinal));
+            Assert.Contains(feishu.FixGuidance, value => value.Href == "#feishu-validate-signature-input");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("FEISHU_APP_ID", previousAppId);
+            Environment.SetEnvironmentVariable("FEISHU_APP_SECRET", previousAppSecret);
+        }
+    }
 }
