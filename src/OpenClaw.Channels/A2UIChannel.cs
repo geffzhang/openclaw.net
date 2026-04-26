@@ -122,7 +122,7 @@ public sealed class A2UIChannel : IChannelAdapter
             return;
         }
 
-        using var document = JsonDocument.Parse("{\"text\":" + JsonSerializer.Serialize(message.Text) + "}");
+        using var document = JsonDocument.Parse("{\"text\":\"" + JsonEncodedText.Encode(message.Text) + "\"}");
 
         await SendInstructionAsync(
             message.RecipientId,
@@ -242,7 +242,7 @@ public sealed class A2UIChannel : IChannelAdapter
 
     private async ValueTask SendErrorAsync(string recipientId, string message, CancellationToken ct)
     {
-        using var doc = JsonDocument.Parse("{\"message\":" + JsonSerializer.Serialize(message) + "}");
+        using var doc = JsonDocument.Parse("{\"message\":\"" + JsonEncodedText.Encode(message) + "\"}");
 
         await SendInstructionAsync(
             recipientId,

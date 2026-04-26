@@ -90,7 +90,7 @@ public sealed class A2UIInsForgeTests
             CancellationToken.None);
 
         var payload = Encoding.UTF8.GetString(ws.Sent.Single());
-        Assert.EndsWith('\n', payload);
+        Assert.EndsWith("\n", payload, StringComparison.Ordinal);
         var instruction = JsonSerializer.Deserialize(payload, CoreJsonContext.Default.A2UIInstruction);
         Assert.Equal("updateDataModel", instruction!.Type);
         Assert.Equal("/cart", instruction.Path);
