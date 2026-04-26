@@ -126,7 +126,20 @@ internal static class PipelineExtensions
                 startup.Config.InsForge,
                 runtime.A2UIChannel,
                 app.Services.GetRequiredService<ILoggerFactory>().CreateLogger<InsForgeRealtimeBridge>());
-            _ = Task.Run(() => bridge.RunAsync(app.Lifetime.ApplicationStopping), CancellationToken.None);
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await bridge.RunAsync(app.Lifetime.ApplicationStopping);
+                }
+                catch (OperationCanceledException) when (app.Lifetime.ApplicationStopping.IsCancellationRequested)
+                {
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "InsForge Realtime bridge stopped unexpectedly.");
+                }
+            }, CancellationToken.None);
         }
     }
 

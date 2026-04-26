@@ -72,6 +72,29 @@ public sealed class A2UIInsForgeTests
     }
 
     [Fact]
+    public async Task A2UIChannel_AllowsClientEventWithMissingOptionalFields()
+    {
+        var channel = new A2UIChannel(new A2UIChannelConfig { MaxMessageBytes = 1024 });
+        var ws = new TestWebSocket();
+        ws.QueueReceiveText("""{"type":"click"}""");
+        ws.QueueClose();
+
+        InboundMessage? received = null;
+        channel.OnMessageReceived += (msg, _) =>
+        {
+            received = msg;
+            return ValueTask.CompletedTask;
+        };
+
+        await channel.HandleConnectionAsync(ws, "client-1", IPAddress.Loopback, CancellationToken.None);
+
+        Assert.NotNull(received);
+        Assert.Equal("click", received!.Text);
+        Assert.Null(received.SessionId);
+        Assert.Null(received.MessageId);
+    }
+
+    [Fact]
     public async Task A2UIChannel_SendsJsonLineInstruction()
     {
         var channel = new A2UIChannel(new A2UIChannelConfig());

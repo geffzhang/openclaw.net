@@ -75,7 +75,8 @@ internal sealed class InsForgeRealtimeBridge
             if (!result.EndOfMessage)
             {
                 _logger.LogWarning("Skipping oversized fragmented InsForge Realtime message.");
-                return;
+                await DrainFragmentedMessageAsync(ws, ct);
+                continue;
             }
 
             var payload = Encoding.UTF8.GetString(buffer, 0, result.Count);
@@ -86,6 +87,17 @@ internal sealed class InsForgeRealtimeBridge
             }
 
             await _a2uiChannel.SendInstructionAsync(recipientId, instruction, ct);
+        }
+    }
+
+    private static async Task DrainFragmentedMessageAsync(ClientWebSocket ws, CancellationToken ct)
+    {
+        var buffer = new byte[8192];
+        while (ws.State == WebSocketState.Open && !ct.IsCancellationRequested)
+        {
+            var result = await ws.ReceiveAsync(buffer, ct);
+            if (result.EndOfMessage || result.MessageType == WebSocketMessageType.Close)
+                return;
         }
     }
 

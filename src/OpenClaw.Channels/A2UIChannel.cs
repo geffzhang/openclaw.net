@@ -122,8 +122,6 @@ public sealed class A2UIChannel : IChannelAdapter
             return;
         }
 
-        using var document = JsonDocument.Parse("{\"text\":\"" + JsonEncodedText.Encode(message.Text) + "\"}");
-
         await SendInstructionAsync(
             message.RecipientId,
             new A2UIInstruction
@@ -131,7 +129,7 @@ public sealed class A2UIChannel : IChannelAdapter
                 Type = "updateDataModel",
                 SurfaceId = message.SessionId,
                 Path = "/assistant/latest",
-                Value = document.RootElement.GetProperty("text").Clone(),
+                Value = CloneStringElement(message.Text),
                 MessageId = message.ReplyToMessageId
             },
             ct);
@@ -242,17 +240,25 @@ public sealed class A2UIChannel : IChannelAdapter
 
     private async ValueTask SendErrorAsync(string recipientId, string message, CancellationToken ct)
     {
-        using var doc = JsonDocument.Parse("{\"message\":\"" + JsonEncodedText.Encode(message) + "\"}");
-
         await SendInstructionAsync(
             recipientId,
             new A2UIInstruction
             {
                 Type = "updateDataModel",
                 Path = "/errors/latest",
-                Value = doc.RootElement.GetProperty("message").Clone()
+                Value = CloneStringElement(message)
             },
             ct);
+    }
+
+    private static JsonElement CloneStringElement(string value)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+            writer.WriteStringValue(value);
+
+        using var document = JsonDocument.Parse(stream.ToArray());
+        return document.RootElement.Clone();
     }
 
     private async Task<string?> ReceiveFullTextMessageAsync(WebSocket ws, CancellationToken ct)
