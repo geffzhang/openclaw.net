@@ -272,6 +272,7 @@ internal static class RuntimeInitializationExtensions
             ToolSandbox = app.Services.GetService<IToolSandbox>(),
             Pipeline = app.Services.GetRequiredService<MessagePipeline>(),
             WebSocketChannel = app.Services.GetRequiredService<WebSocketChannel>(),
+            A2UIChannel = app.Services.GetRequiredService<A2UIChannel>(),
             NativeRegistry = app.Services.GetRequiredService<NativePluginRegistry>(),
             McpRegistry = app.Services.GetRequiredService<McpServerToolRegistry>()
         };
@@ -293,6 +294,9 @@ internal static class RuntimeInitializationExtensions
         {
             ["websocket"] = services.WebSocketChannel
         };
+
+        if (config.Channels.A2UI.Enabled)
+            channelAdapters["a2ui"] = services.A2UIChannel;
 
         if (smsChannel is not null)
             channelAdapters["sms"] = smsChannel;
@@ -478,6 +482,7 @@ internal static class RuntimeInitializationExtensions
             Pipeline = services.Pipeline,
             MiddlewarePipeline = middlewarePipeline,
             WebSocketChannel = services.WebSocketChannel,
+            A2UIChannel = services.A2UIChannel,
             ChannelAdapters = channelComposition.ChannelAdapters,
             SessionManager = services.SessionManager,
             RetentionCoordinator = services.RetentionCoordinator,
@@ -571,6 +576,13 @@ internal static class RuntimeInitializationExtensions
 
         if (browserAvailability.Registered)
             tools.Add(new BrowserTool(config.Tooling, services.RuntimeMetrics, browserAvailability.LocalExecutionSupported));
+
+        if (config.InsForge.Enabled)
+        {
+            tools.Add(new InsForgeQueryComponentTool(config.InsForge));
+            tools.Add(new InsForgeUpdateDataModelTool(config.InsForge));
+            tools.Add(new InsForgeCallEdgeA2UITool(config.InsForge));
+        }
 
         if (string.Equals(Environment.GetEnvironmentVariable("OPENCLAW_ENABLE_STREAMING_SMOKE_TOOL"), "1", StringComparison.Ordinal))
             tools.Add(new StreamingSmokeEchoTool());
@@ -1091,6 +1103,7 @@ internal static class RuntimeInitializationExtensions
         public IToolSandbox? ToolSandbox { get; init; }
         public required MessagePipeline Pipeline { get; init; }
         public required WebSocketChannel WebSocketChannel { get; init; }
+        public required A2UIChannel A2UIChannel { get; init; }
         public required NativePluginRegistry NativeRegistry { get; init; }
         public required McpServerToolRegistry McpRegistry { get; init; }
     }

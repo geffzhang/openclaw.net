@@ -192,6 +192,12 @@ internal static class GatewayBootstrapExtensions
         config.Llm.Model = Environment.GetEnvironmentVariable("MODEL_PROVIDER_MODEL") ?? config.Llm.Model;
         config.Llm.Endpoint = ResolveSecretRefOrNull(config.Llm.Endpoint) ?? Environment.GetEnvironmentVariable("MODEL_PROVIDER_ENDPOINT");
         config.AuthToken ??= Environment.GetEnvironmentVariable("OPENCLAW_AUTH_TOKEN");
+        config.InsForge.Endpoint = Environment.GetEnvironmentVariable("INSFORGE_ENDPOINT") ?? config.InsForge.Endpoint;
+        config.InsForge.RealtimeUrl = Environment.GetEnvironmentVariable("INSFORGE_REALTIME_URL") ?? config.InsForge.RealtimeUrl;
+        if (bool.TryParse(Environment.GetEnvironmentVariable("INSFORGE_ENABLED"), out var insForgeEnabled))
+            config.InsForge.Enabled = insForgeEnabled;
+        if (bool.TryParse(Environment.GetEnvironmentVariable("A2UI_CHANNEL_ENABLED"), out var a2uiEnabled))
+            config.Channels.A2UI.Enabled = a2uiEnabled;
     }
 
     private static void ApplyExecutionCompatibility(GatewayConfig config)

@@ -24,6 +24,7 @@ internal sealed class GatewayAppRuntime
     public required MessagePipeline Pipeline { get; init; }
     public required MiddlewarePipeline MiddlewarePipeline { get; init; }
     public required WebSocketChannel WebSocketChannel { get; init; }
+    public required A2UIChannel A2UIChannel { get; init; }
     public required IReadOnlyDictionary<string, IChannelAdapter> ChannelAdapters { get; init; }
     public required SessionManager SessionManager { get; init; }
     public required IMemoryRetentionCoordinator RetentionCoordinator { get; init; }

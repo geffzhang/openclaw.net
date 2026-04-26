@@ -156,6 +156,7 @@ internal static class CoreServicesExtensions
         services.AddSingleton<CronSchedulerStartupService>();
         services.AddHostedService(sp => sp.GetRequiredService<CronSchedulerStartupService>());
         services.AddSingleton(new WebSocketChannel(config.WebSocket));
+        services.AddSingleton(new A2UIChannel(config.Channels.A2UI));
         services.AddSingleton<ChatCommandProcessor>();
         services.AddSingleton<GatewayLlmExecutionService>();
         services.AddSingleton<PromptCacheWarmService>();

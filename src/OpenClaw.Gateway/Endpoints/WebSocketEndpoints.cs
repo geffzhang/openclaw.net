@@ -58,6 +58,26 @@ internal static class WebSocketEndpoints
                 }
             }
         });
+
+        app.Map(startup.Config.Channels.A2UI.EndpointPath, async (HttpContext ctx) =>
+        {
+            if (!startup.Config.Channels.A2UI.Enabled)
+            {
+                ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+                return;
+            }
+
+            if (!TryValidateWebSocketRequest(ctx, startup, runtime, bucket: "a2ui"))
+                return;
+
+            var ws = await ctx.WebSockets.AcceptWebSocketAsync();
+            var clientId = ctx.Request.Query.TryGetValue("clientId", out var requestedClientId) &&
+                           !string.IsNullOrWhiteSpace(requestedClientId.ToString())
+                ? requestedClientId.ToString()
+                : ctx.Connection.Id;
+
+            await runtime.A2UIChannel.HandleConnectionAsync(ws, clientId, ctx.Connection.RemoteIpAddress, ctx.RequestAborted);
+        });
     }
 
     private static bool TryValidateWebSocketRequest(
