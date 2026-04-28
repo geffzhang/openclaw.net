@@ -69,13 +69,11 @@ internal sealed class TodoTool : IToolWithContext
                 if (string.IsNullOrWhiteSpace(text))
                     return ValueTask.FromResult("Error: text is required.");
 
-                var status = TodoToolSupport.GetStatus(root, SessionTodoStatus.Pending, out var statusError);
-                if (statusError is not null)
-                    return ValueTask.FromResult(statusError);
+                if (!TodoToolSupport.TryGetStatus(root, SessionTodoStatus.Pending, out var status, out var statusError))
+                    return ValueTask.FromResult(statusError ?? "Error: invalid status.");
 
-                var priority = TodoToolSupport.GetPriority(root, SessionTodoPriority.Medium, out var priorityError);
-                if (priorityError is not null)
-                    return ValueTask.FromResult(priorityError);
+                if (!TodoToolSupport.TryGetPriority(root, SessionTodoPriority.Medium, out var priority, out var priorityError))
+                    return ValueTask.FromResult(priorityError ?? "Error: invalid priority.");
 
                 var now = DateTimeOffset.UtcNow;
                 todos.Add(new SessionTodoItem
@@ -111,20 +109,23 @@ internal sealed class TodoTool : IToolWithContext
                 }
 
                 var existing = todos[index];
-                var status = action switch
+                string status;
+                switch (action)
                 {
-                    "start" => SessionTodoStatus.InProgress,
-                    "complete" => SessionTodoStatus.Completed,
-                    _ => TodoToolSupport.GetStatus(root, existing.Status, out var error) is var parsedStatus && error is null
-                        ? parsedStatus
-                        : null
-                };
-                if (status is null)
-                    return ValueTask.FromResult(TodoToolSupport.GetInvalidStatusError(root));
+                    case "start":
+                        status = SessionTodoStatus.InProgress;
+                        break;
+                    case "complete":
+                        status = SessionTodoStatus.Completed;
+                        break;
+                    default:
+                        if (!TodoToolSupport.TryGetStatus(root, existing.Status, out status, out var statusError))
+                            return ValueTask.FromResult(statusError ?? "Error: invalid status.");
+                        break;
+                }
 
-                var priority = TodoToolSupport.GetPriority(root, existing.Priority, out var priorityError);
-                if (priorityError is not null)
-                    return ValueTask.FromResult(priorityError);
+                if (!TodoToolSupport.TryGetPriority(root, existing.Priority, out var priority, out var priorityError))
+                    return ValueTask.FromResult(priorityError ?? "Error: invalid priority.");
 
                 todos[index] = new SessionTodoItem
                 {
@@ -296,12 +297,10 @@ internal static class TodoToolSupport
                 return [];
             }
 
-            var status = GetStatus(item, SessionTodoStatus.Pending, out error);
-            if (error is not null)
+            if (!TryGetStatus(item, SessionTodoStatus.Pending, out var status, out error))
                 return [];
 
-            var priority = GetPriority(item, SessionTodoPriority.Medium, out error);
-            if (error is not null)
+            if (!TryGetPriority(item, SessionTodoPriority.Medium, out var priority, out error))
                 return [];
 
             var id = GetString(item, "id");
@@ -337,42 +336,54 @@ internal static class TodoToolSupport
     public static string? GetTodoText(JsonElement root)
         => GetString(root, "content") ?? GetString(root, "text");
 
-    public static string GetStatus(JsonElement root, string defaultStatus, out string? error)
+    public static bool TryGetStatus(JsonElement root, string defaultStatus, out string status, out string? error)
     {
         error = null;
-        var status = GetString(root, "status");
-        if (string.IsNullOrWhiteSpace(status))
-            return defaultStatus;
+        var value = GetString(root, "status");
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            status = defaultStatus;
+            return true;
+        }
 
-        return status.Trim() switch
+        status = value.Trim() switch
         {
             SessionTodoStatus.Pending => SessionTodoStatus.Pending,
             SessionTodoStatus.InProgress => SessionTodoStatus.InProgress,
             SessionTodoStatus.Completed => SessionTodoStatus.Completed,
-            _ => InvalidStatus(out error)
+            _ => ""
         };
+
+        if (status.Length > 0)
+            return true;
+
+        error = "Error: status must be pending, in_progress, or completed.";
+        return false;
     }
 
-    public static string GetPriority(JsonElement root, string defaultPriority, out string? error)
+    public static bool TryGetPriority(JsonElement root, string defaultPriority, out string priority, out string? error)
     {
         error = null;
-        var priority = GetString(root, "priority");
-        if (string.IsNullOrWhiteSpace(priority))
-            return defaultPriority;
+        var value = GetString(root, "priority");
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            priority = defaultPriority;
+            return true;
+        }
 
-        return priority.Trim() switch
+        priority = value.Trim() switch
         {
             SessionTodoPriority.High => SessionTodoPriority.High,
             SessionTodoPriority.Medium => SessionTodoPriority.Medium,
             SessionTodoPriority.Low => SessionTodoPriority.Low,
-            _ => InvalidPriority(out error)
+            _ => ""
         };
-    }
 
-    public static string GetInvalidStatusError(JsonElement root)
-    {
-        _ = GetStatus(root, SessionTodoStatus.Pending, out var error);
-        return error ?? "Error: invalid status.";
+        if (priority.Length > 0)
+            return true;
+
+        error = "Error: priority must be high, medium, or low.";
+        return false;
     }
 
     private static string NormalizeStatus(SessionTodoItem item)
@@ -383,15 +394,4 @@ internal static class TodoToolSupport
     private static string NormalizePriority(string? priority)
         => string.IsNullOrWhiteSpace(priority) ? SessionTodoPriority.Medium : priority;
 
-    private static string InvalidStatus(out string? error)
-    {
-        error = "Error: status must be pending, in_progress, or completed.";
-        return "";
-    }
-
-    private static string InvalidPriority(out string? error)
-    {
-        error = "Error: priority must be high, medium, or low.";
-        return "";
-    }
 }

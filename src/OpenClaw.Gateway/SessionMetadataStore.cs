@@ -129,6 +129,8 @@ internal sealed class SessionMetadataStore
                 CreatedAtUtc = item.CreatedAtUtc == default ? DateTimeOffset.UtcNow : item.CreatedAtUtc,
                 UpdatedAtUtc = item.UpdatedAtUtc == default ? DateTimeOffset.UtcNow : item.UpdatedAtUtc
             })
+            .OrderBy(static item => item.Completed)
+            .ThenBy(static item => item.CreatedAtUtc)
             .ToArray();
     }
 

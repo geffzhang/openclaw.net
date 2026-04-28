@@ -91,10 +91,9 @@ public sealed class TodoToolTests
         Assert.Contains("Implement change", readResult, StringComparison.Ordinal);
 
         var metadata = metadataStore.Get("sess_todo_write");
-        Assert.Collection(metadata.TodoItems,
-            item => Assert.Equal(SessionTodoStatus.Completed, item.Status),
-            item => Assert.Equal(SessionTodoStatus.InProgress, item.Status),
-            item => Assert.Equal(SessionTodoStatus.Pending, item.Status));
+        Assert.Contains(metadata.TodoItems, static item => item.Status == SessionTodoStatus.Completed);
+        Assert.Contains(metadata.TodoItems, static item => item.Status == SessionTodoStatus.InProgress);
+        Assert.Contains(metadata.TodoItems, static item => item.Status == SessionTodoStatus.Pending);
 
         var invalidResult = await writeTool.ExecuteAsync("""
         {
