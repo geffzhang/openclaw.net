@@ -122,6 +122,8 @@ internal static partial class RuntimeInitializationExtensions
             new SessionSearchTool(services.SessionSearchStore),
             new ProfileReadTool(services.UserProfileStore),
             new TodoTool(services.SessionMetadataStore),
+            new TodoReadTool(services.SessionMetadataStore),
+            new TodoWriteTool(services.SessionMetadataStore),
             new AutomationTool(services.AutomationService, services.Pipeline),
             new VisionAnalyzeTool(services.GeminiMultimodalService),
             new TextToSpeechTool(services.TextToSpeechService),

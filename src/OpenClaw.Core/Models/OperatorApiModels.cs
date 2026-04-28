@@ -544,9 +544,25 @@ public sealed class SessionTodoItem
     public required string Id { get; init; }
     public string Text { get; init; } = "";
     public bool Completed { get; init; }
+    public string Status { get; init; } = "";
+    public string Priority { get; init; } = "";
     public string? Notes { get; init; }
     public DateTimeOffset CreatedAtUtc { get; init; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAtUtc { get; init; } = DateTimeOffset.UtcNow;
+}
+
+public static class SessionTodoStatus
+{
+    public const string Pending = "pending";
+    public const string InProgress = "in_progress";
+    public const string Completed = "completed";
+}
+
+public static class SessionTodoPriority
+{
+    public const string High = "high";
+    public const string Medium = "medium";
+    public const string Low = "low";
 }
 
 public sealed class SessionDiffResponse

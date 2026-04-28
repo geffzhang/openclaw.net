@@ -90,7 +90,7 @@ internal sealed class SessionMetadataStore
 
         if (AtomicJsonFileStore.TryLoad(_path, CoreJsonContext.Default.ListSessionMetadataSnapshot, out List<SessionMetadataSnapshot>? items, out var error))
         {
-            _cached = items ?? [];
+            _cached = items is null ? [] : items.Select(NormalizeSnapshot).ToList();
             return _cached;
         }
 
@@ -122,13 +122,51 @@ internal sealed class SessionMetadataStore
             {
                 Id = string.IsNullOrWhiteSpace(item.Id) ? $"todo_{Guid.NewGuid():N}"[..17] : item.Id.Trim(),
                 Text = item.Text.Trim(),
-                Completed = item.Completed,
+                Completed = NormalizeStatus(item.Status, item.Completed) == SessionTodoStatus.Completed,
+                Status = NormalizeStatus(item.Status, item.Completed),
+                Priority = NormalizePriority(item.Priority),
                 Notes = string.IsNullOrWhiteSpace(item.Notes) ? null : item.Notes.Trim(),
                 CreatedAtUtc = item.CreatedAtUtc == default ? DateTimeOffset.UtcNow : item.CreatedAtUtc,
                 UpdatedAtUtc = item.UpdatedAtUtc == default ? DateTimeOffset.UtcNow : item.UpdatedAtUtc
             })
-            .OrderBy(static item => item.Completed)
-            .ThenBy(static item => item.CreatedAtUtc)
             .ToArray();
+    }
+
+    private static SessionMetadataSnapshot NormalizeSnapshot(SessionMetadataSnapshot snapshot)
+        => new()
+        {
+            SessionId = snapshot.SessionId,
+            Starred = snapshot.Starred,
+            Tags = snapshot.Tags,
+            ActivePresetId = snapshot.ActivePresetId,
+            TodoItems = NormalizeTodoItems(snapshot.TodoItems)
+        };
+
+    private static string NormalizeStatus(string? status, bool completed)
+    {
+        if (string.IsNullOrWhiteSpace(status))
+            return completed ? SessionTodoStatus.Completed : SessionTodoStatus.Pending;
+
+        return status.Trim() switch
+        {
+            SessionTodoStatus.Pending => SessionTodoStatus.Pending,
+            SessionTodoStatus.InProgress => SessionTodoStatus.InProgress,
+            SessionTodoStatus.Completed => SessionTodoStatus.Completed,
+            _ => completed ? SessionTodoStatus.Completed : SessionTodoStatus.Pending
+        };
+    }
+
+    private static string NormalizePriority(string? priority)
+    {
+        if (string.IsNullOrWhiteSpace(priority))
+            return SessionTodoPriority.Medium;
+
+        return priority.Trim() switch
+        {
+            SessionTodoPriority.High => SessionTodoPriority.High,
+            SessionTodoPriority.Medium => SessionTodoPriority.Medium,
+            SessionTodoPriority.Low => SessionTodoPriority.Low,
+            _ => SessionTodoPriority.Medium
+        };
     }
 }
