@@ -117,6 +117,31 @@ internal static class PipelineExtensions
             app.Services.GetService<GatewayAutomationService>(),
             app.Services.GetService<ContractGovernanceService>(),
             app.Services.GetService<AudioTranscriptionService>());
+            app.Services.GetService<ContractGovernanceService>());
+
+        if (startup.Config.InsForge.Enabled &&
+            startup.Config.Channels.A2UI.Enabled &&
+            !string.IsNullOrWhiteSpace(startup.Config.InsForge.RealtimeUrl))
+        {
+            var bridge = new InsForgeRealtimeBridge(
+                startup.Config.InsForge,
+                runtime.A2UIChannel,
+                app.Services.GetRequiredService<ILoggerFactory>().CreateLogger<InsForgeRealtimeBridge>());
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await bridge.RunAsync(app.Lifetime.ApplicationStopping);
+                }
+                catch (OperationCanceledException) when (app.Lifetime.ApplicationStopping.IsCancellationRequested)
+                {
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "InsForge Realtime bridge stopped unexpectedly.");
+                }
+            }, CancellationToken.None);
+        }
     }
 
     private static void StartChannels(WebApplication app, GatewayAppRuntime runtime)

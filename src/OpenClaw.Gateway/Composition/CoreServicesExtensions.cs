@@ -162,6 +162,7 @@ internal static class CoreServicesExtensions
         services.AddSingleton<CanvasCommandBroker>();
         services.AddSingleton<GatewayRuntimeShutdownCoordinator>();
         services.AddHostedService(sp => sp.GetRequiredService<GatewayRuntimeShutdownCoordinator>());
+        services.AddSingleton(new A2UIChannel(config.Channels.A2UI));
         services.AddSingleton<ChatCommandProcessor>();
         services.AddSingleton<GatewayLlmExecutionService>();
         services.AddSingleton<PromptCacheWarmService>();

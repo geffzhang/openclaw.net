@@ -33,6 +33,7 @@ public sealed class GatewayConfig
     public LearningConfig Learning { get; set; } = new();
     public WebhooksConfig Webhooks { get; set; } = new();
     public RoutingConfig Routing { get; set; } = new();
+    public InsForgeConfig InsForge { get; set; } = new();
     public TailscaleConfig Tailscale { get; set; } = new();
     public GmailPubSubConfig GmailPubSub { get; set; } = new();
     public MdnsConfig Mdns { get; set; } = new();
@@ -384,6 +385,20 @@ public sealed class ChannelsConfig
     public SlackChannelConfig Slack { get; set; } = new();
     public DiscordChannelConfig Discord { get; set; } = new();
     public SignalChannelConfig Signal { get; set; } = new();
+    public A2UIChannelConfig A2UI { get; set; } = new();
+}
+
+public sealed class A2UIChannelConfig
+{
+    public bool Enabled { get; set; } = false;
+    public string EndpointPath { get; set; } = "/a2ui/stream";
+    public int MaxConnections { get; set; } = 256;
+    public int MaxConnectionsPerIp { get; set; } = 16;
+    public int MaxMessageBytes { get; set; } = 64 * 1024;
+    public int MaxInstructionBytes { get; set; } = 128 * 1024;
+    public int MessagesPerMinutePerConnection { get; set; } = 120;
+    public int ReceiveTimeoutSeconds { get; set; } = 120;
+    public string[] AllowedComponentTypes { get; set; } = [];
 }
 
 public sealed class WhatsAppChannelConfig
@@ -687,6 +702,26 @@ public sealed class AgentRouteConfig
     public ModelSelectionRequirements ModelRequirements { get; set; } = new();
     public string? PresetId { get; set; }
     public string[] AllowedTools { get; set; } = [];
+}
+
+// ── InsForge BaaS Integration ───────────────────────────────────
+
+public sealed class InsForgeConfig
+{
+    public bool Enabled { get; set; } = false;
+    public string? Endpoint { get; set; }
+    public string ApiKeyRef { get; set; } = "env:INSFORGE_API_KEY";
+    public int TimeoutSeconds { get; set; } = 30;
+    public string ComponentQueryPath { get; set; } = "/functions/v1/a2ui/query_component";
+    public string DataModelPath { get; set; } = "/rest/v1/openclaw_sessions";
+    public string EdgeFunctionBasePath { get; set; } = "/functions/v1";
+    public string? RealtimeUrl { get; set; }
+    public string? RealtimeSubscribePayload { get; set; }
+    public string RealtimeSessionIdProperty { get; set; } = "sessionId";
+    public string RealtimeRecipientIdProperty { get; set; } = "recipientId";
+    public string RealtimePathProperty { get; set; } = "path";
+    public string RealtimeValueProperty { get; set; } = "value";
+    public string RealtimeJsonPointerPrefix { get; set; } = "/insforge";
 }
 
 // ── Tailscale ───────────────────────────────────────────────────
