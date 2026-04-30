@@ -398,7 +398,21 @@ public sealed class A2UIChannelConfig
     public int MaxInstructionBytes { get; set; } = 128 * 1024;
     public int MessagesPerMinutePerConnection { get; set; } = 120;
     public int ReceiveTimeoutSeconds { get; set; } = 120;
+
+    /// <summary>
+    /// Component types accepted in <c>updateComponents</c> instructions. Empty means
+    /// "use the unified default dictionary" (the 11 v0.8 / v0.9 component types). To accept
+    /// arbitrary component types, set <see cref="AllowAnyComponentType"/> to <c>true</c>.
+    /// </summary>
     public string[] AllowedComponentTypes { get; set; } = [];
+
+    /// <summary>
+    /// When <c>true</c>, disables the component-type allow-list entirely. Reserved for trusted
+    /// passthrough scenarios (e.g. InsForge JSONB updates that may carry arbitrary shapes).
+    /// Defaults to <c>false</c>: production traffic is restricted to the unified default
+    /// dictionary unless an explicit list is supplied.
+    /// </summary>
+    public bool AllowAnyComponentType { get; set; } = false;
 }
 
 public sealed class WhatsAppChannelConfig

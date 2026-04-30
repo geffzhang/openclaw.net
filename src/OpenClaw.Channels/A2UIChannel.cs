@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using OpenClaw.Core.A2UI;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
 
@@ -17,7 +18,7 @@ public sealed class A2UIChannel : IChannelAdapter
     private readonly A2UIChannelConfig _config;
     private readonly ConcurrentDictionary<string, ConnectionState> _connections = new();
     private readonly ConcurrentDictionary<string, int> _connectionsPerIp = new();
-    private readonly HashSet<string> _allowedComponentTypes;
+    private readonly ComponentTypePolicy _componentPolicy;
     private int _connectionCount;
 
     private sealed class ConnectionState
@@ -62,7 +63,7 @@ public sealed class A2UIChannel : IChannelAdapter
     public A2UIChannel(A2UIChannelConfig config)
     {
         _config = config;
-        _allowedComponentTypes = new HashSet<string>(config.AllowedComponentTypes, StringComparer.Ordinal);
+        _componentPolicy = ComponentTypePolicy.FromConfig(config.AllowedComponentTypes, config.AllowAnyComponentType);
     }
 
     public string ChannelId => "a2ui";
@@ -416,7 +417,7 @@ public sealed class A2UIChannel : IChannelAdapter
 
         if (string.Equals(instruction.Type, "updateComponents", StringComparison.Ordinal) &&
             instruction.Components is { } components &&
-            !A2UIProtocol.ContainsOnlyAllowedComponents(components, _allowedComponentTypes))
+            !A2UIProtocol.ContainsOnlyAllowedComponents(components, _componentPolicy))
         {
             return "A2UI component payload contains a component type that is not allowed.";
         }

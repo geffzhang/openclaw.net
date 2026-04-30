@@ -1,4 +1,5 @@
 using System.Text.Json;
+using OpenClaw.Core.A2UI;
 
 namespace OpenClaw.Core.Models;
 
@@ -31,8 +32,8 @@ public sealed record A2UIClientEvent
 
 public static class A2UIProtocol
 {
-    public const int MaxPointerLength = 512;
-    public const int MaxComponentTypeLength = 128;
+    public const int MaxPointerLength = A2UIProtocolLimits.MaxPointerLength;
+    public const int MaxComponentTypeLength = A2UIProtocolLimits.MaxComponentTypeLength;
 
     public static bool IsSupportedInstructionType(string? type)
         => string.Equals(type, "createSurface", StringComparison.Ordinal) ||
@@ -69,6 +70,11 @@ public static class A2UIProtocol
         return true;
     }
 
+    /// <summary>
+    /// Legacy overload: an empty <paramref name="allowedComponentTypes"/> means "allow any" for
+    /// backward compatibility with callers wired before <see cref="ComponentTypePolicy"/> existed.
+    /// New callers should prefer <see cref="ContainsOnlyAllowedComponents(JsonElement, ComponentTypePolicy)"/>.
+    /// </summary>
     public static bool ContainsOnlyAllowedComponents(JsonElement components, IReadOnlySet<string> allowedComponentTypes)
     {
         if (allowedComponentTypes.Count == 0)
@@ -76,6 +82,14 @@ public static class A2UIProtocol
 
         return WalkComponents(components, allowedComponentTypes);
     }
+
+    /// <summary>
+    /// Validates that every component <c>type</c> in <paramref name="components"/> is admitted by
+    /// <paramref name="policy"/>. This is the unified entry point used by both the v0.8 frame
+    /// path and the v0.9 instruction path.
+    /// </summary>
+    public static bool ContainsOnlyAllowedComponents(JsonElement components, ComponentTypePolicy policy)
+        => policy.Accepts(components);
 
     private static bool WalkComponents(JsonElement element, IReadOnlySet<string> allowedComponentTypes)
     {

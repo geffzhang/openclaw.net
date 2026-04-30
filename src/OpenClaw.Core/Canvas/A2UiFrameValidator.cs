@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using OpenClaw.Core.A2UI;
 
 namespace OpenClaw.Core.Canvas;
 
@@ -13,20 +14,9 @@ public static class A2UiFrameValidator
 {
     public const string ContentTypeV08 = "application/x-a2ui+jsonl;version=0.8";
 
-    private static readonly HashSet<string> SupportedTypes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "text",
-        "markdown",
-        "card",
-        "button",
-        "input",
-        "select",
-        "checklist",
-        "table",
-        "image",
-        "progress",
-        "chart"
-    };
+    private static readonly HashSet<string> SupportedTypes = new(
+        ComponentTypePolicy.DefaultComponentTypes,
+        StringComparer.OrdinalIgnoreCase);
 
     public static A2UiValidationResult ValidateJsonl(string? frames, int maxFrames, int maxBytes)
     {
