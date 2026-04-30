@@ -26,10 +26,11 @@ using OpenClaw.Gateway.Extensions;
 using OpenClaw.Gateway.Models;
 using OpenClaw.Gateway.Profiles;
 using OpenClaw.Gateway.Tools;
+using OpenClaw.Gateway.Pipeline;
 
 namespace OpenClaw.Gateway.Composition;
 
-internal static class RuntimeInitializationExtensions
+internal static partial class RuntimeInitializationExtensions
 {
     public static async Task<GatewayAppRuntime> InitializeOpenClawRuntimeAsync(
         this WebApplication app,
@@ -186,6 +187,8 @@ internal static class RuntimeInitializationExtensions
         StartNativeEventBridges(config, loggerFactory, services.Pipeline, app.Lifetime.ApplicationStopping);
 
         var profile = app.Services.GetRequiredService<IRuntimeProfile>();
+        var shutdownCoordinator = app.Services.GetRequiredService<GatewayRuntimeShutdownCoordinator>();
+        shutdownCoordinator.RegisterAsyncCleanup("mcp registry", _ => services.McpRegistry.DisposeAsync());
         var runtime = CreateGatewayRuntime(
             config,
             services,
@@ -200,6 +203,7 @@ internal static class RuntimeInitializationExtensions
             tools,
             skills,
             cronScheduler);
+        shutdownCoordinator.AttachRuntime(startup, runtime);
 
         services.PluginHealth.SetRuntimeReports(
             runtime.PluginReports,
@@ -215,8 +219,8 @@ internal static class RuntimeInitializationExtensions
                 config.Tailscale,
                 config.Port,
                 loggerFactory.CreateLogger<Integrations.TailscaleService>());
-            _ = tailscale.StartAsync(app.Lifetime.ApplicationStopping);
-            app.Lifetime.ApplicationStopping.Register(() => tailscale.DisposeAsync().AsTask().GetAwaiter().GetResult());
+            shutdownCoordinator.RegisterAsyncCleanup("tailscale serve/funnel", _ => tailscale.DisposeAsync());
+            await tailscale.StartAsync(app.Lifetime.ApplicationStopping);
         }
 
         if (config.Mdns.Enabled)
@@ -226,8 +230,8 @@ internal static class RuntimeInitializationExtensions
                 config.Port,
                 authRequired: !string.IsNullOrWhiteSpace(config.AuthToken),
                 loggerFactory.CreateLogger<Integrations.MdnsDiscoveryService>());
+            shutdownCoordinator.RegisterAsyncCleanup("mDNS discovery", _ => mdns.DisposeAsync());
             mdns.Start(app.Lifetime.ApplicationStopping);
-            app.Lifetime.ApplicationStopping.Register(() => mdns.DisposeAsync().AsTask().GetAwaiter().GetResult());
         }
 
         return runtime;

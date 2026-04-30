@@ -81,6 +81,9 @@ internal static class CoreServicesExtensions
                 sp.GetRequiredService<ILogger<SessionMetadataStore>>()));
         services.AddSingleton(sp => new MediaCacheStore(config.Multimodal.MediaCachePath));
         services.AddSingleton<GeminiMultimodalService>();
+        services.AddSingleton<GeminiAudioTranscriptionProvider>();
+        services.AddSingleton<IAudioTranscriptionProvider>(sp => sp.GetRequiredService<GeminiAudioTranscriptionProvider>());
+        services.AddSingleton<AudioTranscriptionService>();
         services.AddSingleton<GeminiLiveProxyService>();
         services.AddSingleton<ILiveSessionProvider>(sp => sp.GetRequiredService<GeminiLiveProxyService>());
         services.AddSingleton<GeminiTextToSpeechProvider>();
@@ -156,11 +159,16 @@ internal static class CoreServicesExtensions
         services.AddSingleton<CronSchedulerStartupService>();
         services.AddHostedService(sp => sp.GetRequiredService<CronSchedulerStartupService>());
         services.AddSingleton(new WebSocketChannel(config.WebSocket));
+        services.AddSingleton<CanvasCommandBroker>();
+        services.AddSingleton<GatewayRuntimeShutdownCoordinator>();
+        services.AddHostedService(sp => sp.GetRequiredService<GatewayRuntimeShutdownCoordinator>());
         services.AddSingleton(new A2UIChannel(config.Channels.A2UI));
         services.AddSingleton<ChatCommandProcessor>();
         services.AddSingleton<GatewayLlmExecutionService>();
         services.AddSingleton<PromptCacheWarmService>();
         services.AddHostedService(sp => sp.GetRequiredService<PromptCacheWarmService>());
+        services.AddSingleton<SqliteEmbeddingBackfillService>();
+        services.AddHostedService(sp => sp.GetRequiredService<SqliteEmbeddingBackfillService>());
         services.AddSingleton<IAgentRuntimeFactory, NativeAgentRuntimeFactory>();
 
         return services;
@@ -217,24 +225,6 @@ internal static class CoreServicesExtensions
                 sqliteConfig.EnableFts,
                 embeddingGenerator: embeddingGen,
                 enableVectors: sqliteConfig.EnableVectors);
-
-            if (embeddingGen is not null)
-            {
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        await store.BackfillEmbeddingsAsync();
-                    }
-                    catch (Exception ex)
-                    {
-                        logger.LogWarning(
-                            "Embedding backfill failed ({Type}): {Reason}. Memory vector search may be incomplete until resolved.",
-                            ex.GetType().Name,
-                            ex.Message);
-                    }
-                });
-            }
 
             return store;
         }
