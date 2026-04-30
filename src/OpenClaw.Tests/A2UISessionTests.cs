@@ -97,7 +97,7 @@ public sealed class A2UISessionTests
     {
         var session = A2UISession.ForStandalone(
             "client-1",
-            new[] { A2UICapabilities.V0_9, A2UICapabilities.V0_9, " ", null!, A2UICapabilities.Eval });
+            new string?[] { A2UICapabilities.V0_9, A2UICapabilities.V0_9, " ", null, A2UICapabilities.Eval }!);
 
         Assert.Equal(2, session.Capabilities.Count);
     }

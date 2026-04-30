@@ -103,7 +103,15 @@ public sealed class A2UISession
     /// (`updateDataModel` / `updateComponents` / `createSurface`).</summary>
     public bool SupportsV09 => Version == A2UIVersion.V0_9;
 
-    /// <summary>True when this session can receive v0.8 JSONL frames.</summary>
+    /// <summary>
+    /// True when this session can receive v0.8 JSONL frames.
+    /// </summary>
+    /// <remarks>
+    /// Canvas-origin sessions retain v0.8 capability even after negotiating v0.9, because the
+    /// Canvas (`/ws`) sub-protocol historically transports v0.8 frames and webchat / Companion
+    /// renderers are first-party consumers of that wire format. Standalone (`/a2ui/stream`)
+    /// sessions follow strict version routing.
+    /// </remarks>
     public bool SupportsV08 => Version == A2UIVersion.V0_8 || Origin == A2UISessionOrigin.Canvas;
 
     /// <summary>Records that a surface was acknowledged by the server.</summary>
