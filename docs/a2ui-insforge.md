@@ -1,5 +1,8 @@
 # A2UI and InsForge integration
 
+> **📘 New unified reference:** see [**A2UI.md**](./A2UI.md). This document is preserved for
+> the InsForge-bridge-focused historical record; new readers should start with the unified doc.
+
 OpenClaw.NET can expose an optional A2UI channel and optional InsForge tools for data-driven declarative UI flows.
 
 ## Configuration

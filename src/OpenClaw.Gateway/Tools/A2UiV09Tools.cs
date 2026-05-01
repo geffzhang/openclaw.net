@@ -21,7 +21,7 @@ internal abstract class A2UiV09ToolBase : CanvasToolBase
 {
     protected A2UiV09ToolBase(CanvasCommandBroker broker, GatewayConfig config) : base(broker, config) { }
 
-    protected const string V09Capability = "a2ui.v0_9";
+    protected const string V09Capability = A2UICapabilities.V0_9;
     protected const string EnvelopeType = "a2ui_instruction";
 
     protected ComponentTypePolicy ComponentPolicy

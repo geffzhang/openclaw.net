@@ -1,5 +1,8 @@
 # Canvas and A2UI
 
+> **📘 New unified reference:** see [**A2UI.md**](./A2UI.md). This document is preserved for
+> the v0.8-focused historical record; new readers should start with the unified doc.
+
 Canvas and A2UI are supported as a first-party, session-scoped visual workspace for websocket clients. The v1 implementation focuses on local Canvas content and A2UI v0.8 JSONL rendering. It is not a replacement for the browser tool and does not support arbitrary remote webpage navigation or remote-page script execution.
 
 ## What Ships

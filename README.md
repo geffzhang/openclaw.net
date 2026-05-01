@@ -114,6 +114,7 @@ The full documentation map lives at **[docs/README.md](docs/README.md)**. Starti
 | [docs/QUICKSTART.md](docs/QUICKSTART.md) | Shortest supported path to a running local instance |
 | [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | Providers, tools, skills, memory, channels, and day-to-day operation |
 | [docs/TOOLS_GUIDE.md](docs/TOOLS_GUIDE.md) | Native tool catalog and configuration |
+| [docs/A2UI.md](docs/A2UI.md) | **Unified A2UI subsystem reference** — protocol versions, capability negotiation, tools, config, security model |
 | [docs/CANVAS_A2UI.md](docs/CANVAS_A2UI.md) | Supported Canvas and A2UI visual workspace behavior |
 | [docs/a2ui-insforge.md](docs/a2ui-insforge.md) | Optional A2UI channel and InsForge BaaS integration |
 | [docs/MODEL_PROFILES.md](docs/MODEL_PROFILES.md) | Provider-agnostic named model profiles (including Gemma) |

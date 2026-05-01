@@ -37,10 +37,21 @@ internal static partial class RuntimeInitializationExtensions
         GatewayStartupContext startup)
     {
         var config = startup.Config;
+        // Plan step 6 — apply the unified OpenClaw:A2UI overlay onto legacy keys, log
+        // deprecation notices once for any legacy-only-set fields.
+        var legacyA2UIKeys = OpenClaw.Core.A2UI.A2UIConfigMigration.ApplyOverlay(config);
         GatewaySecurityExtensions.ApplyStrictPublicBindProfile(config, startup.IsNonLoopbackBind);
         var loggerFactory = app.Services.GetRequiredService<ILoggerFactory>();
         var startupLogger = loggerFactory.CreateLogger("Startup");
         var startupNoticeSink = app.Services.GetRequiredService<IStartupNoticeSink>();
+        if (legacyA2UIKeys.Count > 0)
+        {
+            var keys = string.Join(", ", legacyA2UIKeys);
+            startupLogger.LogWarning(
+                "A2UI legacy configuration keys detected ({Keys}); migrate to OpenClaw:A2UI. Legacy keys remain supported for at least one release. See docs/A2UI.md.",
+                keys);
+            startupNoticeSink.Record($"A2UI legacy keys in use: {keys}. Migrate to OpenClaw:A2UI.");
+        }
         var browserAvailability = BrowserToolSupport.Evaluate(config, startup.RuntimeState);
         startupLogger.LogInformation(
             "Runtime mode resolved: requested={RequestedMode}, effective={EffectiveMode}, dynamicCodeSupported={DynamicCodeSupported}, orchestrator={Orchestrator}.",

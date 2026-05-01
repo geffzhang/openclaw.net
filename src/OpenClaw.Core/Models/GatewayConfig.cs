@@ -34,6 +34,14 @@ public sealed class GatewayConfig
     public WebhooksConfig Webhooks { get; set; } = new();
     public RoutingConfig Routing { get; set; } = new();
     public InsForgeConfig InsForge { get; set; } = new();
+    /// <summary>
+    /// Plan step 6 — the unified A2UI configuration root. When fields on this section are
+    /// set (non-null), they overlay onto the legacy <see cref="CanvasConfig"/>,
+    /// <see cref="A2UIChannelConfig"/>, and <see cref="InsForgeConfig"/> keys via
+    /// <c>A2UIConfigMigration.ApplyOverlay</c>. Legacy keys remain authoritative for at
+    /// least one release. See <c>docs/A2UI.md</c> for the full mapping table.
+    /// </summary>
+    public A2UIConfig A2UI { get; set; } = new();
     public TailscaleConfig Tailscale { get; set; } = new();
     public GmailPubSubConfig GmailPubSub { get; set; } = new();
     public MdnsConfig Mdns { get; set; } = new();
@@ -774,4 +782,81 @@ public sealed class MdnsConfig
     public string ServiceType { get; set; } = "_openclaw._tcp";
     public string? InstanceName { get; set; }
     public int Port { get; set; } = 0; // 0 = use gateway port
+}
+
+// ── A2UI Unified Configuration (plan step 6) ───────────────────
+// Unified successor to OpenClaw:Canvas, OpenClaw:Channels:A2UI, and OpenClaw:InsForge.
+// Legacy keys remain authoritative for at least one release; this section is read first when
+// set. Migration warnings are logged at startup by A2UIConfigMigration.
+
+/// <summary>
+/// Plan step 6 — the unified <c>OpenClaw:A2UI</c> configuration root. When any field on this
+/// section is set, it takes precedence over the corresponding legacy key. When unset, the
+/// legacy key remains authoritative and a deprecation warning is logged once at startup
+/// (see <c>A2UIConfigMigration</c>). Both forms remain supported for at least one release.
+/// </summary>
+public sealed class A2UIConfig
+{
+    /// <summary>
+    /// When non-null, replaces both <c>OpenClaw:Canvas:Enabled</c> (which gates v0.8 Canvas
+    /// command forwarding) and <c>OpenClaw:Channels:A2UI:Enabled</c> (which gates the v0.9
+    /// standalone endpoint). When <c>null</c>, the legacy keys are used.
+    /// </summary>
+    public bool? Enabled { get; set; }
+
+    /// <summary>
+    /// Unified public-bind gate. Replaces <c>OpenClaw:Canvas:AllowOnPublicBind</c>.
+    /// </summary>
+    public bool? AllowOnPublicBind { get; set; }
+
+    public A2UIConnectionConfig Connection { get; set; } = new();
+    public A2UIFramesConfig Frames { get; set; } = new();
+    public A2UIComponentsConfig Components { get; set; } = new();
+    public A2UISurfacesConfig Surfaces { get; set; } = new();
+
+    /// <summary>
+    /// Migrated from <c>OpenClaw:InsForge</c>. When unset, legacy <c>OpenClaw:InsForge</c>
+    /// continues to apply.
+    /// </summary>
+    public InsForgeConfig? InsForge { get; set; }
+}
+
+public sealed class A2UIConnectionConfig
+{
+    public int? MaxConnections { get; set; }
+    public int? MaxConnectionsPerIp { get; set; }
+    public int? MessagesPerMinutePerConnection { get; set; }
+    public int? ReceiveTimeoutSeconds { get; set; }
+    public int? MaxMessageBytes { get; set; }
+}
+
+public sealed class A2UIFramesConfig
+{
+    /// <summary>Migrated from <c>OpenClaw:Canvas:MaxFramesPerPush</c>.</summary>
+    public int? MaxFramesPerPush { get; set; }
+    /// <summary>Migrated from <c>OpenClaw:Canvas:MaxCommandBytes</c>.</summary>
+    public int? MaxBytes { get; set; }
+    /// <summary>Migrated from <c>OpenClaw:Channels:A2UI:MaxInstructionBytes</c>.</summary>
+    public int? MaxInstructionBytes { get; set; }
+}
+
+public sealed class A2UIComponentsConfig
+{
+    /// <summary>
+    /// Unified component allow-list. When non-null, replaces
+    /// <c>OpenClaw:Channels:A2UI:AllowedComponentTypes</c>. An empty array means
+    /// "use the default 11-type dictionary."
+    /// </summary>
+    public string[]? AllowedTypes { get; set; }
+
+    /// <summary>
+    /// When non-null, replaces <c>OpenClaw:Channels:A2UI:AllowAnyComponentType</c>.
+    /// </summary>
+    public bool? AllowAny { get; set; }
+}
+
+public sealed class A2UISurfacesConfig
+{
+    public string DefaultSurface { get; set; } = "main";
+    public bool AllowMultipleSurfaces { get; set; } = true;
 }
