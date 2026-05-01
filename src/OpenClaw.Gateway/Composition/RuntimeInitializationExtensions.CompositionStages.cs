@@ -61,6 +61,7 @@ internal static partial class RuntimeInitializationExtensions
             Pipeline = app.Services.GetRequiredService<MessagePipeline>(),
             WebSocketChannel = app.Services.GetRequiredService<WebSocketChannel>(),
             CanvasBroker = app.Services.GetRequiredService<CanvasCommandBroker>(),
+            A2UIChannel = app.Services.GetRequiredService<A2UIChannel>(),
             NativeRegistry = app.Services.GetRequiredService<NativePluginRegistry>(),
             McpRegistry = app.Services.GetRequiredService<McpServerToolRegistry>()
         };
@@ -564,6 +565,7 @@ internal static partial class RuntimeInitializationExtensions
         public required MessagePipeline Pipeline { get; init; }
         public required WebSocketChannel WebSocketChannel { get; init; }
         public required CanvasCommandBroker CanvasBroker { get; init; }
+        public required A2UIChannel A2UIChannel { get; init; }
         public required NativePluginRegistry NativeRegistry { get; init; }
         public required McpServerToolRegistry McpRegistry { get; init; }
     }

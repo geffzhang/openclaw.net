@@ -117,7 +117,6 @@ internal static class PipelineExtensions
             app.Services.GetService<GatewayAutomationService>(),
             app.Services.GetService<ContractGovernanceService>(),
             app.Services.GetService<AudioTranscriptionService>());
-            app.Services.GetService<ContractGovernanceService>());
 
         if (startup.Config.InsForge.Enabled &&
             startup.Config.Channels.A2UI.Enabled &&

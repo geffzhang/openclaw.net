@@ -58,6 +58,7 @@ internal static partial class RuntimeInitializationExtensions
             Pipeline = services.Pipeline,
             MiddlewarePipeline = middlewarePipeline,
             WebSocketChannel = services.WebSocketChannel,
+            A2UIChannel = services.A2UIChannel,
             ChannelAdapters = channelComposition.ChannelAdapters,
             SessionManager = services.SessionManager,
             RetentionCoordinator = services.RetentionCoordinator,

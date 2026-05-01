@@ -332,6 +332,7 @@ public sealed class GatewayRuntimeLifecycleTests
         var pipeline = new MessagePipeline();
         var middleware = new MiddlewarePipeline([]);
         var wsChannel = new WebSocketChannel(config.WebSocket);
+        var a2uiChannel = new A2UIChannel(config.Channels.A2UI);
         var nativeRegistry = new NativePluginRegistry(config.Plugins.Native, NullLogger.Instance, config.Tooling);
         var skillWatcher = new SkillWatcherService(config.Skills, null, [], agentRuntime, NullLogger<SkillWatcherService>.Instance);
 
@@ -342,6 +343,7 @@ public sealed class GatewayRuntimeLifecycleTests
             Pipeline = pipeline,
             MiddlewarePipeline = middleware,
             WebSocketChannel = wsChannel,
+            A2UIChannel = a2uiChannel,
             ChannelAdapters = new Dictionary<string, IChannelAdapter>(StringComparer.Ordinal)
             {
                 ["websocket"] = wsChannel
