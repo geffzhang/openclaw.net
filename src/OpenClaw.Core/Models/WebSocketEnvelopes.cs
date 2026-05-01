@@ -60,6 +60,13 @@ public sealed record WsServerEnvelope
     public string? Error { get; init; }
     public bool? Success { get; init; }
 
+    // A2UI v0.9 instruction fields (carried via type="a2ui_instruction" Canvas envelope).
+    // These are nullable additions that v0.8 clients safely ignore.
+    public string? Path { get; init; }
+    public System.Text.Json.JsonElement? Components { get; init; }
+    public System.Text.Json.JsonElement? Value { get; init; }
+    public string? InstructionType { get; init; }
+
     // Tool approval request/status (server -> client)
     public string? ApprovalId { get; init; }
     public string? ToolName { get; init; }
