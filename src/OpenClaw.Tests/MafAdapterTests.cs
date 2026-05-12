@@ -365,7 +365,6 @@ public sealed class MafAdapterTests
         Directory.CreateDirectory(memoryStoragePath);
 
         var services = new ServiceCollection();
-        services.AddSingleton(toolPresetResolver);
         services.AddSingleton<IToolPresetResolver>(toolPresetResolver);
         var serviceProvider = services.BuildServiceProvider();
 
@@ -619,7 +618,6 @@ public sealed class MafAdapterTests
         private static async IAsyncEnumerable<ChatResponseUpdate> GetUpdates()
         {
             yield return new ChatResponseUpdate(ChatRole.Assistant, "ok");
-            await Task.CompletedTask;
         }
     }
 
