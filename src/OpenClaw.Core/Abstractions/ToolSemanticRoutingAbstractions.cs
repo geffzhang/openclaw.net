@@ -22,6 +22,14 @@ public sealed class ToolSemanticRoutingConfig
     public bool FailOpen { get; set; } = true;
 }
 
+public static class ToolSemanticRoutingEmbeddingProviders
+{
+    public const string Onnx = "onnx";
+
+    public static string? Normalize(string? provider)
+        => string.IsNullOrWhiteSpace(provider) ? null : provider.Trim().ToLowerInvariant();
+}
+
 public static class ToolSemanticRoutingModes
 {
     public const string Fast = "fast";

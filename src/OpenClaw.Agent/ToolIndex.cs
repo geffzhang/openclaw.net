@@ -12,9 +12,11 @@ public sealed class ToolIndex : IToolIndex
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<string, ToolDefinitionSnapshot> _snapshots = new(StringComparer.Ordinal);
     private readonly Dictionary<string, float[]> _embeddings = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, long> _updateVersions = new(StringComparer.Ordinal);
     private readonly Dictionary<string, IReadOnlyList<ToolRouteCandidate>> _queryCache = new(StringComparer.Ordinal);
     private readonly Queue<string> _queryCacheOrder = new();
     private long _revision;
+    private long _updateVersion;
 
     public ToolIndex(
         ToolSemanticRoutingConfig config,
@@ -37,11 +39,13 @@ public sealed class ToolIndex : IToolIndex
         try
         {
             var currentNames = toolList.Select(static tool => tool.Name).ToHashSet(StringComparer.Ordinal);
-            foreach (var removed in _snapshots.Keys.Where(name => !currentNames.Contains(name)).ToArray())
+            foreach (var removed in _updateVersions.Keys.Concat(_snapshots.Keys).Where(name => !currentNames.Contains(name)).Distinct(StringComparer.Ordinal).ToArray())
             {
-                _snapshots.Remove(removed);
-                _embeddings.Remove(removed);
-                BumpRevisionAndClearCache();
+                var changed = _snapshots.Remove(removed);
+                changed |= _embeddings.Remove(removed);
+                _updateVersions[removed] = ++_updateVersion;
+                if (changed)
+                    BumpRevisionAndClearCache();
             }
         }
         finally
@@ -57,6 +61,7 @@ public sealed class ToolIndex : IToolIndex
     {
         EnsureEmbeddingGenerator();
 
+        long updateVersion;
         await _gate.WaitAsync(ct);
         try
         {
@@ -66,6 +71,9 @@ public sealed class ToolIndex : IToolIndex
             {
                 return;
             }
+
+            updateVersion = ++_updateVersion;
+            _updateVersions[tool.Name] = updateVersion;
         }
         finally
         {
@@ -77,6 +85,16 @@ public sealed class ToolIndex : IToolIndex
         await _gate.WaitAsync(ct);
         try
         {
+            if (!_updateVersions.TryGetValue(tool.Name, out var currentUpdateVersion) || currentUpdateVersion != updateVersion)
+                return;
+
+            if (_snapshots.TryGetValue(tool.Name, out var existing) &&
+                string.Equals(existing.DefinitionHash, tool.DefinitionHash, StringComparison.Ordinal) &&
+                _embeddings.ContainsKey(tool.Name))
+            {
+                return;
+            }
+
             _snapshots[tool.Name] = tool;
             _embeddings[tool.Name] = embedding;
             BumpRevisionAndClearCache();
@@ -94,6 +112,7 @@ public sealed class ToolIndex : IToolIndex
         {
             var removed = _snapshots.Remove(toolName);
             removed |= _embeddings.Remove(toolName);
+            _updateVersions[toolName] = ++_updateVersion;
             if (removed)
                 BumpRevisionAndClearCache();
             return removed;

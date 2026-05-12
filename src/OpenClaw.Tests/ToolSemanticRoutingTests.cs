@@ -81,6 +81,38 @@ public sealed class ToolSemanticRoutingTests
     }
 
     [Fact]
+    public async Task ToolIndex_StaleConcurrentUpdate_CannotOverwriteNewerUpdate()
+    {
+        var generator = new BlockingEmbeddingGenerator();
+        var index = new ToolIndex(new ToolSemanticRoutingConfig { QueryCacheSize = 16 }, generator);
+        await index.InitializeAsync([WeatherTool], CancellationToken.None);
+
+        var stale = WeatherTool with
+        {
+            DefinitionHash = "weather-stale",
+            EmbeddingText = "stale-route"
+        };
+        var fresh = WeatherTool with
+        {
+            DefinitionHash = "weather-fresh",
+            EmbeddingText = "fresh-route"
+        };
+
+        var staleUpdate = index.AddOrUpdateToolAsync(stale, CancellationToken.None).AsTask();
+        await generator.StaleStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await index.AddOrUpdateToolAsync(fresh, CancellationToken.None);
+        generator.ReleaseStale.SetResult();
+        await staleUpdate;
+
+        var results = await index.SearchAsync("forecast", ["weather"], topK: 1, minScore: 0.9f, mode: "fast", CancellationToken.None);
+
+        var result = Assert.Single(results);
+        Assert.Equal("weather", result.ToolName);
+        Assert.True(result.Score >= 0.9f);
+    }
+
+    [Fact]
     public async Task ToolRouter_OnlyReturnsCandidateTools()
     {
         var router = CreateRouter();
@@ -232,6 +264,54 @@ public sealed class ToolSemanticRoutingTests
 
         public void Dispose()
         {
+        }
+    }
+
+    private sealed class BlockingEmbeddingGenerator : IEmbeddingGenerator<string, Embedding<float>>
+    {
+        public TaskCompletionSource StaleStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource ReleaseStale { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public EmbeddingGeneratorMetadata Metadata { get; } = new("blocking-test");
+
+        public async Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
+            IEnumerable<string> values,
+            EmbeddingGenerationOptions? options = null,
+            CancellationToken cancellationToken = default)
+        {
+            var generated = new GeneratedEmbeddings<Embedding<float>>();
+            foreach (var value in values)
+            {
+                if (value.Contains("stale-route", StringComparison.OrdinalIgnoreCase))
+                {
+                    StaleStarted.TrySetResult();
+                    await ReleaseStale.Task.WaitAsync(cancellationToken);
+                }
+
+                generated.Add(new Embedding<float>(Embed(value)));
+            }
+
+            return generated;
+        }
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+        public void Dispose()
+        {
+        }
+
+        private static float[] Embed(string value)
+        {
+            if (value.Contains("fresh-route", StringComparison.OrdinalIgnoreCase) ||
+                value.Contains("forecast", StringComparison.OrdinalIgnoreCase))
+            {
+                return [1f, 0f];
+            }
+
+            if (value.Contains("stale-route", StringComparison.OrdinalIgnoreCase))
+                return [0f, 1f];
+
+            return [0.5f, 0.5f];
         }
     }
 

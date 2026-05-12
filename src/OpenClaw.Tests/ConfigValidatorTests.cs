@@ -56,7 +56,7 @@ public sealed class ConfigValidatorTests
                 SemanticRouting = new OpenClaw.Core.Abstractions.ToolSemanticRoutingConfig
                 {
                     Enabled = true,
-                    EmbeddingProvider = "onnx",
+                    EmbeddingProvider = "ONNX",
                     EmbeddingModel = "sentence-transformers/all-MiniLM-L6-v2",
                     ModelPath = null
                 }
@@ -66,6 +66,46 @@ public sealed class ConfigValidatorTests
         var errors = ConfigValidator.Validate(config);
 
         Assert.DoesNotContain(errors, error => error.Contains("SemanticRouting", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_SemanticRouting_RejectsUnsupportedEmbeddingProvider()
+    {
+        var config = new GatewayConfig
+        {
+            Tooling = new ToolingConfig
+            {
+                SemanticRouting = new OpenClaw.Core.Abstractions.ToolSemanticRoutingConfig
+                {
+                    Enabled = true,
+                    EmbeddingProvider = "local"
+                }
+            }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+
+        Assert.Contains(errors, error => error.Contains("SemanticRouting.EmbeddingProvider", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_SemanticRouting_BlankEmbeddingProviderIsAllowed()
+    {
+        var config = new GatewayConfig
+        {
+            Tooling = new ToolingConfig
+            {
+                SemanticRouting = new OpenClaw.Core.Abstractions.ToolSemanticRoutingConfig
+                {
+                    Enabled = true,
+                    EmbeddingProvider = " "
+                }
+            }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+
+        Assert.DoesNotContain(errors, error => error.Contains("SemanticRouting.EmbeddingProvider", StringComparison.Ordinal));
     }
 
     [Fact]
