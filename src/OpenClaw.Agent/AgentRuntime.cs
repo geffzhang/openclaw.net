@@ -112,7 +112,8 @@ public sealed class AgentRuntime : IAgentRuntime
         ToolAuditLog? toolAuditLog = null,
         IRedactionPipeline? redaction = null,
         ISentinelSubstitutionService? sentinelSubstitution = null,
-        IToolGovernanceService? toolGovernance = null)
+        IToolGovernanceService? toolGovernance = null,
+        IToolDeclarationFilter? toolDeclarationFilter = null)
     {
         _chatClient = chatClient;
         _tools = tools;
@@ -162,6 +163,7 @@ public sealed class AgentRuntime : IAgentRuntime
             redaction: _redaction,
             sentinelSubstitution: _sentinelSubstitution,
             toolGovernance: toolGovernance,
+            toolDeclarationFilter: toolDeclarationFilter,
             auditLog: toolAuditLog);
         _sessionTokenBudget = sessionTokenBudget;
         _estimateTokenBudgetAdmission = gatewayConfig?.EnableEstimatedTokenAdmissionControl ?? false;
@@ -287,7 +289,7 @@ public sealed class AgentRuntime : IAgentRuntime
             ModelId = session.ModelOverride ?? _config.Model,
             MaxOutputTokens = _maxTokens,
             Temperature = _temperature,
-            Tools = _toolExecutor.GetToolDeclarations(session),
+            Tools = await _toolExecutor.GetToolDeclarationsAsync(session, userMessage, ct),
             ResponseFormat = responseSchema.HasValue
                 ? ChatResponseFormat.ForJsonSchema(responseSchema.Value, "response")
                 : null
@@ -520,7 +522,7 @@ public sealed class AgentRuntime : IAgentRuntime
             ModelId = session.ModelOverride ?? _config.Model,
             MaxOutputTokens = _maxTokens,
             Temperature = _temperature,
-            Tools = _toolExecutor.GetToolDeclarations(session)
+            Tools = await _toolExecutor.GetToolDeclarationsAsync(session, userMessage, ct)
         };
 
         if (!string.IsNullOrWhiteSpace(session.ReasoningEffort))

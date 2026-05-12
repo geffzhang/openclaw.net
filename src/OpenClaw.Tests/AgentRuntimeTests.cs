@@ -121,6 +121,38 @@ public class AgentRuntimeTests
     }
 
     [Fact]
+    public async Task RunAsync_UsesUserPromptWhenFilteringToolDeclarations()
+    {
+        var chatClient = Substitute.For<IChatClient>();
+        ChatOptions? capturedOptions = null;
+        var filter = new PromptCapturingFilter(["weather"]);
+        var weather = new CountingTool("weather", "ok");
+        var email = new CountingTool("email", "ok");
+
+        chatClient.GetResponseAsync(
+            Arg.Any<IEnumerable<ChatMessage>>(),
+            Arg.Do<ChatOptions>(options => capturedOptions = options),
+            Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ChatResponse(new[] { new ChatMessage(ChatRole.Assistant, "done") })));
+
+        var agent = new AgentRuntime(
+            chatClient,
+            [weather, email],
+            _memory,
+            _config,
+            maxHistoryTurns: 10,
+            gatewayConfig: new GatewayConfig(),
+            toolDeclarationFilter: filter);
+
+        await agent.RunAsync(new Session { Id = "s", SenderId = "u", ChannelId = "c" }, "what is the forecast", CancellationToken.None);
+
+        Assert.Equal("what is the forecast", filter.LastPrompt);
+        Assert.NotNull(capturedOptions);
+        var declaredTools = capturedOptions!.Tools ?? throw new InvalidOperationException("Expected tools to be declared.");
+        Assert.Equal(["weather"], declaredTools.Select(static tool => tool.Name).ToArray());
+    }
+
+    [Fact]
     public async Task RunAsync_PersistsCheckpointAfterToolBatch()
     {
         var chatClient = Substitute.For<IChatClient>();
@@ -318,6 +350,26 @@ public class AgentRuntimeTests
         {
             Interlocked.Increment(ref _callCount);
             return ValueTask.FromResult(result);
+        }
+    }
+
+    private sealed class PromptCapturingFilter(IReadOnlyList<string> selectedTools) : IToolDeclarationFilter
+    {
+        public string? LastPrompt { get; private set; }
+
+        public ValueTask<IReadOnlyList<string>> FilterToolNamesAsync(
+            Session session,
+            string userPrompt,
+            IReadOnlyList<ToolDefinitionSnapshot> tools,
+            IReadOnlyCollection<string> candidateToolNames,
+            CancellationToken ct)
+        {
+            _ = session;
+            _ = tools;
+            _ = candidateToolNames;
+            _ = ct;
+            LastPrompt = userPrompt;
+            return ValueTask.FromResult(selectedTools);
         }
     }
 

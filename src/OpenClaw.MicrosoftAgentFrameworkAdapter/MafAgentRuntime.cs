@@ -10,6 +10,7 @@ using OpenClaw.Agent;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
+using OpenClaw.Core.Security;
 using OpenClaw.Core.Skills;
 
 namespace OpenClaw.MicrosoftAgentFrameworkAdapter;
@@ -46,6 +47,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
     private readonly string? _memoryRecallPrefix;
     private readonly object _skillGate = new();
     private readonly IList<AITool> _mafTools;
+    private readonly Dictionary<string, AITool> _mafToolsByName;
     private string _systemPrompt = string.Empty;
     private string[] _loadedSkillNames = [];
     private int _systemPromptLength;
@@ -70,8 +72,14 @@ public sealed class MafAgentRuntime : IAgentRuntime
             logger,
             config: context.Config,
             toolSandbox: context.ToolSandbox,
+            toolUsageTracker: context.ToolUsageTracker,
+            executionRouter: context.Services.GetService(typeof(OpenClaw.Agent.Execution.ToolExecutionRouter)) as OpenClaw.Agent.Execution.ToolExecutionRouter,
+            toolPresetResolver: context.Services.GetService(typeof(IToolPresetResolver)) as IToolPresetResolver,
             auditLog: context.ToolAuditLog,
-            toolGovernance: context.ToolGovernance);
+            redaction: context.Services.GetService(typeof(IRedactionPipeline)) as IRedactionPipeline,
+            sentinelSubstitution: context.Services.GetService(typeof(ISentinelSubstitutionService)) as ISentinelSubstitutionService,
+            toolGovernance: context.ToolGovernance,
+            toolDeclarationFilter: context.Services.GetService(typeof(IToolDeclarationFilter)) as IToolDeclarationFilter);
         _options = options;
         _agentFactory = agentFactory;
         _sessionStateStore = sessionStateStore;
@@ -108,6 +116,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
         _mafTools = context.Tools
             .Select(tool => (AITool)new MafToolAdapter(tool, _toolExecutor))
             .ToArray();
+        _mafToolsByName = _mafTools.ToDictionary(static tool => tool.Name, StringComparer.Ordinal);
 
         ApplySkills(context.Skills);
     }
@@ -178,7 +187,8 @@ public sealed class MafAgentRuntime : IAgentRuntime
             return "You've reached the token limit for this session. Please start a new conversation.";
         }
 
-        ChatClientAgent agent = CreateAgent(session);
+        var mafTools = await GetMafToolsAsync(session, userMessage, ct);
+        ChatClientAgent agent = CreateAgent(session, mafTools);
         AgentSession mafSession = await _sessionStateStore.LoadAsync(agent, session, ct);
         var toolInvocations = new List<ToolInvocation>();
 
@@ -303,7 +313,8 @@ public sealed class MafAgentRuntime : IAgentRuntime
             yield break;
         }
 
-        ChatClientAgent agent = CreateAgent(session);
+        var mafTools = await GetMafToolsAsync(session, userMessage, ct);
+        ChatClientAgent agent = CreateAgent(session, mafTools);
         AgentSession mafSession = await _sessionStateStore.LoadAsync(agent, session, ct);
         var eventChannel = Channel.CreateBounded<AgentStreamEvent>(new BoundedChannelOptions(256)
         {
@@ -338,9 +349,22 @@ public sealed class MafAgentRuntime : IAgentRuntime
         await producer;
     }
 
-    private ChatClientAgent CreateAgent(Session session)
+    private ChatClientAgent CreateAgent(Session session, IList<AITool> tools)
     {
-        return _agentFactory.Create(_chatClient, GetSystemPrompt(session), _mafTools);
+        return _agentFactory.Create(_chatClient, GetSystemPrompt(session), tools);
+    }
+
+    private async ValueTask<IList<AITool>> GetMafToolsAsync(Session session, string userMessage, CancellationToken ct)
+    {
+        var toolNames = await _toolExecutor.GetAllowedToolNamesAsync(session, userMessage, ct);
+        var result = new List<AITool>(toolNames.Count);
+        foreach (var toolName in toolNames)
+        {
+            if (_mafToolsByName.TryGetValue(toolName, out var tool))
+                result.Add(tool);
+        }
+
+        return result;
     }
 
     private async Task ProduceStreamingRunAsync(

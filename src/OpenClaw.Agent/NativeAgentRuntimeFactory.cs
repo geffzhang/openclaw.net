@@ -46,6 +46,7 @@ public sealed class NativeAgentRuntimeFactory : IAgentRuntimeFactory
             redaction: context.Services.GetService(typeof(OpenClaw.Core.Security.IRedactionPipeline)) as OpenClaw.Core.Security.IRedactionPipeline,
             sentinelSubstitution: context.Services.GetService(typeof(OpenClaw.Core.Security.ISentinelSubstitutionService)) as OpenClaw.Core.Security.ISentinelSubstitutionService,
             toolGovernance: context.ToolGovernance,
+            toolDeclarationFilter: context.Services.GetService(typeof(OpenClaw.Core.Abstractions.IToolDeclarationFilter)) as OpenClaw.Core.Abstractions.IToolDeclarationFilter,
             isContractTokenBudgetExceeded: context.IsContractTokenBudgetExceeded,
             isContractRuntimeBudgetExceeded: context.IsContractRuntimeBudgetExceeded,
             recordContractTurnUsage: context.RecordContractTurnUsage,

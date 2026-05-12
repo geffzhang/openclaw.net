@@ -27,6 +27,7 @@
     <OpenClawFeatureVariant>standard</OpenClawFeatureVariant>
     <OpenClawFeatureVariant Condition="'$(OpenClawEnableMafExperiment)' == 'true'">$(OpenClawFeatureVariant)-maf</OpenClawFeatureVariant>
     <OpenClawFeatureVariant Condition="'$(OpenClawEnableOpenSandbox)' == 'true'">$(OpenClawFeatureVariant)-opensandbox</OpenClawFeatureVariant>
+    <OpenClawFeatureVariant Condition="'$(OpenClawEnableOnnxEmbeddings)' == 'true'">$(OpenClawFeatureVariant)-onnx</OpenClawFeatureVariant>
     <BaseIntermediateOutputPath>obj/$(OpenClawFeatureVariant)/</BaseIntermediateOutputPath>
     <DefaultItemExcludes>$(DefaultItemExcludes);obj/**</DefaultItemExcludes>
   </PropertyGroup>

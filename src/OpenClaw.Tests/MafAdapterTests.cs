@@ -157,6 +157,47 @@ public sealed class MafAdapterTests
     }
 
     [Fact]
+    public async Task MafAgentRuntime_FiltersMafToolsByAllowedToolNames()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IToolPresetResolver>(new StaticPresetResolver(["echo_tool"]));
+        services.AddSingleton<IToolDeclarationFilter>(new ReaddingFilter(["delegate_agent", "echo_tool"]));
+        var serviceProvider = services.BuildServiceProvider();
+        var factory = new MafAgentRuntimeFactory(
+            new MafAgentFactory(Options.Create(new MafOptions()), NullLoggerFactory.Instance, serviceProvider),
+            new MafSessionStateStore(
+                new GatewayConfig(),
+                Options.Create(new MafOptions()),
+                NullLogger<MafSessionStateStore>.Instance),
+            new MafTelemetryAdapter(),
+            Options.Create(new MafOptions()),
+            NullLoggerFactory.Instance);
+
+        var storagePath = Path.Combine(Path.GetTempPath(), "openclaw-maf-filter-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+
+        try
+        {
+            var runtime = Assert.IsType<MafAgentRuntime>(factory.Create(CreateDelegatingContext(serviceProvider, storagePath)));
+            var method = typeof(MafAgentRuntime).GetMethod(
+                "GetMafToolsAsync",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            Assert.NotNull(method);
+
+            var valueTask = (ValueTask<IList<AITool>>)method!.Invoke(
+                runtime,
+                [new Session { Id = "maf-filter", ChannelId = "test", SenderId = "user" }, "delegate this", CancellationToken.None])!;
+            var mafTools = await valueTask;
+
+            Assert.Equal(["echo_tool"], mafTools.Select(static tool => tool.Name).ToArray());
+        }
+        finally
+        {
+            Directory.Delete(storagePath, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task MafSessionStateStore_HistoryHashMismatch_RebuildsFreshSession()
     {
         var storagePath = Path.Combine(Path.GetTempPath(), "openclaw-maf-sidecar-tests", Guid.NewGuid().ToString("N"));
@@ -317,6 +358,62 @@ public sealed class MafAdapterTests
             NullLogger<MafSessionStateStore>.Instance);
     }
 
+    private static AgentRuntimeFactoryContext CreateDelegatingContext(IServiceProvider services, string storagePath)
+        => new()
+        {
+            Services = services,
+            Config = new GatewayConfig
+            {
+                Memory = new MemoryConfig
+                {
+                    StoragePath = storagePath
+                },
+                Llm = new LlmProviderConfig
+                {
+                    Provider = "test-maf",
+                    Model = "maf-test-model"
+                },
+                Delegation = new DelegationConfig
+                {
+                    Enabled = true,
+                    Profiles = new Dictionary<string, AgentProfile>(StringComparer.Ordinal)
+                    {
+                        ["reviewer"] = new()
+                        {
+                            Name = "reviewer",
+                            SystemPrompt = "Review code changes.",
+                            MaxIterations = 2,
+                            MaxHistoryTurns = 4
+                        }
+                    }
+                }
+            },
+            RuntimeState = new GatewayRuntimeState
+            {
+                RequestedMode = "jit",
+                EffectiveMode = GatewayRuntimeMode.Jit,
+                DynamicCodeSupported = true
+            },
+            ChatClient = new MafTestChatClient(),
+            Tools = [new TestTool()],
+            MemoryStore = new FileMemoryStore(storagePath, 4),
+            RuntimeMetrics = new RuntimeMetrics(),
+            ProviderUsage = new ProviderUsageTracker(),
+            LlmExecutionService = new TestLlmExecutionService(),
+            Skills = [],
+            SkillsConfig = new SkillsConfig(),
+            WorkspacePath = null,
+            PluginSkillDirs = [],
+            Logger = NullLogger.Instance,
+            Hooks = [],
+            RequireToolApproval = false,
+            ApprovalRequiredTools = [],
+            IsContractTokenBudgetExceeded = null,
+            IsContractRuntimeBudgetExceeded = null,
+            RecordContractTurnUsage = null,
+            AppendContractSnapshot = null
+        };
+
     private static ChatClientAgent CreateAgent()
     {
         var factory = new MafAgentFactory(
@@ -371,6 +468,42 @@ public sealed class MafAdapterTests
             _ = ct;
             return ValueTask.FromResult("ok");
         }
+    }
+
+    private sealed class ReaddingFilter(IReadOnlyList<string> selectedTools) : IToolDeclarationFilter
+    {
+        public ValueTask<IReadOnlyList<string>> FilterToolNamesAsync(
+            Session session,
+            string userPrompt,
+            IReadOnlyList<ToolDefinitionSnapshot> tools,
+            IReadOnlyCollection<string> candidateToolNames,
+            CancellationToken ct)
+        {
+            _ = session;
+            _ = userPrompt;
+            _ = tools;
+            _ = candidateToolNames;
+            _ = ct;
+            return ValueTask.FromResult(selectedTools);
+        }
+    }
+
+    private sealed class StaticPresetResolver : IToolPresetResolver
+    {
+        private readonly IReadOnlySet<string> _allowedTools;
+
+        public StaticPresetResolver(IEnumerable<string> allowedTools)
+            => _allowedTools = allowedTools.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        public ResolvedToolPreset Resolve(Session session, IEnumerable<string> availableToolNames)
+            => new()
+            {
+                PresetId = "test",
+                AllowedTools = _allowedTools
+            };
+
+        public IReadOnlyList<ResolvedToolPreset> ListPresets(IEnumerable<string> availableToolNames)
+            => [Resolve(new Session { Id = "list", ChannelId = "test", SenderId = "test" }, availableToolNames)];
     }
 
     private sealed class TestLlmExecutionService : ILlmExecutionService
