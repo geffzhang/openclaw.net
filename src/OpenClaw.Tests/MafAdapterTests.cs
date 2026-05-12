@@ -301,6 +301,36 @@ public sealed class MafAdapterTests
         }
     }
 
+    [Fact]
+    public async Task MafAgentRuntime_RunAsync_UsesPresetFilteredToolDeclarations()
+    {
+        var runtime = CreateRuntime(
+            [new NamedTool("allowed_tool"), new NamedTool("blocked_tool")],
+            new AllowOnlyToolPresetResolver("allowed_tool"),
+            out var llmExecutionService);
+
+        var response = await runtime.RunAsync(CreateSession("maf-filtered-run"), "hello", CancellationToken.None);
+
+        Assert.Equal("ok", response);
+        Assert.Equal(["allowed_tool"], llmExecutionService.LastNonStreamingToolNames);
+    }
+
+    [Fact]
+    public async Task MafAgentRuntime_RunStreamingAsync_UsesPresetFilteredToolDeclarations()
+    {
+        var runtime = CreateRuntime(
+            [new NamedTool("allowed_tool"), new NamedTool("blocked_tool")],
+            new AllowOnlyToolPresetResolver("allowed_tool"),
+            out var llmExecutionService);
+
+        var events = new List<AgentStreamEvent>();
+        await foreach (var evt in runtime.RunStreamingAsync(CreateSession("maf-filtered-stream"), "hello", CancellationToken.None))
+            events.Add(evt);
+
+        Assert.NotEmpty(events);
+        Assert.Equal(["allowed_tool"], llmExecutionService.LastStreamingToolNames);
+    }
+
     private static MafSessionStateStore CreateStore(string storagePath)
     {
         var config = new GatewayConfig
@@ -325,6 +355,74 @@ public sealed class MafAdapterTests
             new ServiceCollection().BuildServiceProvider());
 
         return factory.Create(new MafTestChatClient(), "Test instructions", []);
+    }
+
+    private static MafAgentRuntime CreateRuntime(
+        IReadOnlyList<ITool> tools,
+        IToolPresetResolver toolPresetResolver,
+        out CapturingLlmExecutionService llmExecutionService)
+    {
+        var configStoragePath = Path.Combine(Path.GetTempPath(), "openclaw-maf-runtime-tests", "config", Guid.NewGuid().ToString("N"));
+        var memoryStoragePath = Path.Combine(Path.GetTempPath(), "openclaw-maf-runtime-tests", "memory", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(configStoragePath);
+        Directory.CreateDirectory(memoryStoragePath);
+
+        var services = new ServiceCollection();
+        services.AddSingleton(toolPresetResolver);
+        services.AddSingleton<IToolPresetResolver>(toolPresetResolver);
+        var serviceProvider = services.BuildServiceProvider();
+
+        llmExecutionService = new CapturingLlmExecutionService();
+        var factory = new MafAgentRuntimeFactory(
+            new MafAgentFactory(Options.Create(new MafOptions()), NullLoggerFactory.Instance, serviceProvider),
+            new MafSessionStateStore(
+                new GatewayConfig(),
+                Options.Create(new MafOptions()),
+                NullLogger<MafSessionStateStore>.Instance),
+            new MafTelemetryAdapter(),
+            Options.Create(new MafOptions()),
+            NullLoggerFactory.Instance);
+
+        return Assert.IsType<MafAgentRuntime>(factory.Create(new AgentRuntimeFactoryContext
+        {
+            Services = serviceProvider,
+            Config = new GatewayConfig
+            {
+                Memory = new MemoryConfig
+                {
+                    StoragePath = configStoragePath
+                },
+                Llm = new LlmProviderConfig
+                {
+                    Provider = "test-maf",
+                    Model = "maf-test-model"
+                }
+            },
+            RuntimeState = new GatewayRuntimeState
+            {
+                RequestedMode = "jit",
+                EffectiveMode = GatewayRuntimeMode.Jit,
+                DynamicCodeSupported = true
+            },
+            ChatClient = new MafTestChatClient(),
+            Tools = tools,
+            MemoryStore = new FileMemoryStore(memoryStoragePath, 4),
+            RuntimeMetrics = new RuntimeMetrics(),
+            ProviderUsage = new ProviderUsageTracker(),
+            LlmExecutionService = llmExecutionService,
+            Skills = [],
+            SkillsConfig = new SkillsConfig(),
+            WorkspacePath = null,
+            PluginSkillDirs = [],
+            Logger = NullLogger.Instance,
+            Hooks = [],
+            RequireToolApproval = false,
+            ApprovalRequiredTools = [],
+            IsContractTokenBudgetExceeded = null,
+            IsContractRuntimeBudgetExceeded = null,
+            RecordContractTurnUsage = null,
+            AppendContractSnapshot = null
+        }));
     }
 
     private static Session CreateSession(string sessionId)
@@ -373,6 +471,47 @@ public sealed class MafAdapterTests
         }
     }
 
+    private sealed class NamedTool(string name) : ITool
+    {
+        public string Name => name;
+
+        public string Description => $"Tool {name}.";
+
+        public string ParameterSchema => """{"type":"object"}""";
+
+        public ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
+        {
+            _ = argumentsJson;
+            _ = ct;
+            return ValueTask.FromResult(name);
+        }
+    }
+
+    private sealed class AllowOnlyToolPresetResolver(params string[] allowedTools) : IToolPresetResolver
+    {
+        private readonly HashSet<string> _allowedTools = allowedTools.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        public ResolvedToolPreset Resolve(Session session, IEnumerable<string> availableToolNames)
+        {
+            _ = session;
+            var available = availableToolNames
+                .Where(name => _allowedTools.Contains(name))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            return new ResolvedToolPreset
+            {
+                PresetId = "test",
+                Surface = "test",
+                EffectiveAutonomyMode = "supervised",
+                RequireToolApproval = false,
+                AllowedTools = available,
+                ApprovalRequiredTools = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            };
+        }
+
+        public IReadOnlyList<ResolvedToolPreset> ListPresets(IEnumerable<string> availableToolNames)
+            => [Resolve(CreateSession("preset-list"), availableToolNames)];
+    }
+
     private sealed class TestLlmExecutionService : ILlmExecutionService
     {
         public CircuitState DefaultCircuitState => CircuitState.Closed;
@@ -419,6 +558,71 @@ public sealed class MafAdapterTests
                 ModelId = "maf-test-model",
                 Updates = AsyncEnumerable.Empty<ChatResponseUpdate>()
             });
+        }
+    }
+
+    private sealed class CapturingLlmExecutionService : ILlmExecutionService
+    {
+        public CircuitState DefaultCircuitState => CircuitState.Closed;
+
+        public IReadOnlyList<string> LastNonStreamingToolNames { get; private set; } = [];
+
+        public IReadOnlyList<string> LastStreamingToolNames { get; private set; } = [];
+
+        public Task<LlmExecutionResult> GetResponseAsync(
+            Session session,
+            IReadOnlyList<ChatMessage> messages,
+            ChatOptions options,
+            TurnContext turnContext,
+            LlmExecutionEstimate estimate,
+            CancellationToken ct)
+        {
+            _ = session;
+            _ = messages;
+            _ = turnContext;
+            _ = estimate;
+            _ = ct;
+            LastNonStreamingToolNames = CaptureToolNames(options);
+            return Task.FromResult(new LlmExecutionResult
+            {
+                ProviderId = "test-maf",
+                ModelId = "maf-test-model",
+                Response = new ChatResponse([new ChatMessage(ChatRole.Assistant, "ok")])
+            });
+        }
+
+        public Task<LlmStreamingExecutionResult> StartStreamingAsync(
+            Session session,
+            IReadOnlyList<ChatMessage> messages,
+            ChatOptions options,
+            TurnContext turnContext,
+            LlmExecutionEstimate estimate,
+            CancellationToken ct)
+        {
+            _ = session;
+            _ = messages;
+            _ = turnContext;
+            _ = estimate;
+            _ = ct;
+            LastStreamingToolNames = CaptureToolNames(options);
+            return Task.FromResult(new LlmStreamingExecutionResult
+            {
+                ProviderId = "test-maf",
+                ModelId = "maf-test-model",
+                Updates = GetUpdates()
+            });
+        }
+
+        private static IReadOnlyList<string> CaptureToolNames(ChatOptions options)
+            => (options.Tools ?? [])
+                .Select(static tool => tool.Name)
+                .OrderBy(static name => name, StringComparer.Ordinal)
+                .ToArray();
+
+        private static async IAsyncEnumerable<ChatResponseUpdate> GetUpdates()
+        {
+            yield return new ChatResponseUpdate(ChatRole.Assistant, "ok");
+            await Task.CompletedTask;
         }
     }
 

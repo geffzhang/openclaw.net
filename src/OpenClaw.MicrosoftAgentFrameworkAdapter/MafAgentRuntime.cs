@@ -45,7 +45,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
     private readonly Action<Session, string>? _appendContractSnapshot;
     private readonly string? _memoryRecallPrefix;
     private readonly object _skillGate = new();
-    private readonly IList<AITool> _mafTools;
+    private readonly IReadOnlyDictionary<string, AITool> _mafToolsByName;
     private string _systemPrompt = string.Empty;
     private string[] _loadedSkillNames = [];
     private int _systemPromptLength;
@@ -70,6 +70,9 @@ public sealed class MafAgentRuntime : IAgentRuntime
             logger,
             config: context.Config,
             toolSandbox: context.ToolSandbox,
+            toolUsageTracker: context.ToolUsageTracker,
+            executionRouter: context.Services.GetService(typeof(OpenClaw.Agent.Execution.ToolExecutionRouter)) as OpenClaw.Agent.Execution.ToolExecutionRouter,
+            toolPresetResolver: context.Services.GetService(typeof(IToolPresetResolver)) as IToolPresetResolver,
             auditLog: context.ToolAuditLog,
             toolGovernance: context.ToolGovernance);
         _options = options;
@@ -105,9 +108,9 @@ public sealed class MafAgentRuntime : IAgentRuntime
             context.ProviderUsage,
             telemetry,
             logger);
-        _mafTools = context.Tools
+        _mafToolsByName = context.Tools
             .Select(tool => (AITool)new MafToolAdapter(tool, _toolExecutor))
-            .ToArray();
+            .ToDictionary(static tool => tool.Name, StringComparer.Ordinal);
 
         ApplySkills(context.Skills);
     }
@@ -340,8 +343,17 @@ public sealed class MafAgentRuntime : IAgentRuntime
 
     private ChatClientAgent CreateAgent(Session session)
     {
-        return _agentFactory.Create(_chatClient, GetSystemPrompt(session), _mafTools);
+        return _agentFactory.Create(_chatClient, GetSystemPrompt(session), GetDeclaredTools(session));
     }
+
+    internal IReadOnlyList<AITool> GetDeclaredTools(Session session)
+        => _toolExecutor.GetToolDeclarations(session)
+            .Select(static tool => tool.Name)
+            .Distinct(StringComparer.Ordinal)
+            .Select(name => _mafToolsByName.TryGetValue(name, out var tool) ? tool : null)
+            .Where(static tool => tool is not null)
+            .Cast<AITool>()
+            .ToArray();
 
     private async Task ProduceStreamingRunAsync(
         Session session,
