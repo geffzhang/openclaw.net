@@ -346,14 +346,14 @@ public sealed class MafAgentRuntime : IAgentRuntime
         return _agentFactory.Create(_chatClient, GetSystemPrompt(session), GetDeclaredTools(session));
     }
 
-    internal IReadOnlyList<AITool> GetDeclaredTools(Session session)
+    internal IList<AITool> GetDeclaredTools(Session session)
         => _toolExecutor.GetToolDeclarations(session)
             .Select(static tool => tool.Name)
             .Distinct(StringComparer.Ordinal)
             .Select(name => _mafToolsByName.TryGetValue(name, out var tool) ? tool : null)
             .Where(static tool => tool is not null)
             .Cast<AITool>()
-            .ToArray();
+            .ToList();
 
     private async Task ProduceStreamingRunAsync(
         Session session,
