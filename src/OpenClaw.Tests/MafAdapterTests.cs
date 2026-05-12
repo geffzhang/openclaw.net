@@ -144,10 +144,7 @@ public sealed class MafAdapterTests
                 AppendContractSnapshot = null
             }));
 
-            var mafToolsField = typeof(MafAgentRuntime).GetField("_mafTools", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-            Assert.NotNull(mafToolsField);
-
-            var mafTools = Assert.IsAssignableFrom<IReadOnlyList<AITool>>(mafToolsField!.GetValue(runtime));
+            var mafTools = runtime.GetDeclaredTools(CreateSession("maf-delegation-tools"));
             Assert.Contains(mafTools, tool => tool is AIFunction function && function.Name == "delegate_agent");
         }
         finally
