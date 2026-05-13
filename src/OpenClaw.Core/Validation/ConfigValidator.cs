@@ -3,6 +3,7 @@ using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Setup;
 using OpenClaw.Core.Plugins;
+using OpenClaw.Core.ExternalCli;
 using System.Text.RegularExpressions;
 
 namespace OpenClaw.Core.Validation;
@@ -199,6 +200,8 @@ public static class ConfigValidator
                     errors.Add($"Delegation profile '{name}' has MaxIterations < 1.");
             }
         }
+
+        ValidateWorkflows(config.Workflows, errors);
 
         // Middleware
         if (config.SessionTokenBudget < 0)
@@ -718,6 +721,48 @@ public static class ConfigValidator
     private static string ResolveConfiguredPath(string? path)
         => ConfigPathResolver.Resolve(path);
 
+    private static void ValidateWorkflows(WorkflowsConfig config, List<string> errors)
+    {
+        if (!config.Enabled)
+            return;
+
+        if (config.Backends.Count == 0)
+        {
+            errors.Add("Workflows is enabled but no backends are configured.");
+            return;
+        }
+
+        foreach (var (backendId, backend) in config.Backends)
+        {
+            var path = $"Workflows.Backends.{backendId}";
+            if (string.IsNullOrWhiteSpace(backendId))
+            {
+                errors.Add("Workflows.Backends contains an empty backend id.");
+                path = "Workflows.Backends.<empty>";
+            }
+
+            if (!backend.Enabled)
+                continue;
+
+            var kind = string.IsNullOrWhiteSpace(backend.Kind)
+                ? AgentWorkflowBackendKinds.MafDurableHttp
+                : backend.Kind.Trim();
+            if (!string.Equals(kind, AgentWorkflowBackendKinds.MafDurableHttp, StringComparison.OrdinalIgnoreCase))
+                errors.Add($"{path}.Kind must be '{AgentWorkflowBackendKinds.MafDurableHttp}'.");
+
+            if (!Uri.TryCreate(backend.BaseUrl, UriKind.Absolute, out var baseUrl) ||
+                (baseUrl.Scheme != Uri.UriSchemeHttp && baseUrl.Scheme != Uri.UriSchemeHttps))
+            {
+                errors.Add($"{path}.BaseUrl must be an absolute http(s) URL.");
+            }
+
+            if (backend.PollIntervalSeconds < 1)
+                errors.Add($"{path}.PollIntervalSeconds must be >= 1 (got {backend.PollIntervalSeconds}).");
+            if (backend.TimeoutSeconds < 5)
+                errors.Add($"{path}.TimeoutSeconds must be >= 5 (got {backend.TimeoutSeconds}).");
+        }
+    }
+
     private static void ValidateExternalCli(ExternalCliOptions config, List<string> errors)
     {
         if (config.DefaultTimeoutSeconds < 1)
@@ -729,7 +774,18 @@ public static class ConfigValidator
         if (config.AllowFreeformCommands)
             errors.Add("ExternalCli.AllowFreeformCommands is not supported by this native connector; use named allowlisted commands.");
 
-        foreach (var (connectorName, connector) in config.Connectors)
+        var presetIds = config.Presets ?? [];
+        for (var i = 0; i < presetIds.Length; i++)
+        {
+            if (string.IsNullOrWhiteSpace(presetIds[i]))
+                errors.Add($"ExternalCli.Presets[{i}] must not be empty.");
+        }
+
+        foreach (var presetId in ExternalCliPresetCatalog.FindUnknownPresetIds(config))
+            errors.Add($"ExternalCli.Presets contains unknown preset '{presetId}'.");
+
+        var effectiveConfig = ExternalCliPresetCatalog.Apply(config);
+        foreach (var (connectorName, connector) in effectiveConfig.Connectors)
         {
             if (string.IsNullOrWhiteSpace(connectorName))
                 errors.Add("ExternalCli.Connectors contains an empty connector name.");

@@ -20,13 +20,16 @@ Use this page as the map. If you are unsure where to go next, the groups below a
 | [USER_GUIDE.md](USER_GUIDE.md) | Providers, tools, skills, channels, and the day-to-day operator surface. |
 | [RELEASES.md](RELEASES.md) | Desktop download bundles, release assets, and signing/notarization status. |
 | [TOOLS_GUIDE.md](TOOLS_GUIDE.md) | Native tool catalog, behavior, and configuration. |
-| [EXTERNAL_CLI_CONNECTORS.md](EXTERNAL_CLI_CONNECTORS.md) | Governed external CLI connectors, named command allowlists, approvals, redaction, and audit behavior. |
+| [EXTERNAL_CLI_CONNECTORS.md](EXTERNAL_CLI_CONNECTORS.md) | Governed external CLI connectors, optional presets, named command allowlists, approvals, redaction, and audit behavior. |
 | [plugins/payment.md](plugins/payment.md) | Native payment tool, virtual cards, machine payments, providers, and safe agent-facing actions. |
 | [cli/payment.md](cli/payment.md) | `openclaw payment ...` gateway-backed CLI commands and safe output contract. |
 | [mempalace-memory.md](mempalace-memory.md) | Optional ElBruno.MempalaceNet memory provider and temporal KG tool. |
+| [providers/microsoft-extensions-ai.md](providers/microsoft-extensions-ai.md) | Optional JIT bridge for arbitrary `Microsoft.Extensions.AI.IChatClient` providers. |
 | [SESSIONS.md](SESSIONS.md) | Session lifecycle, the `SessionManager`, and the `sessions_spawn` / `sessions_yield` / `sessions` tools. |
 | [CANVAS_A2UI.md](CANVAS_A2UI.md) | Supported Canvas and A2UI behavior for agent-rendered visual workspaces. |
-| [a2a.md](a2a.md) | Experimental A2A v1 discovery, endpoint, authentication, and deployment contract. |
+| [integrations/microsoft-agent-framework.md](integrations/microsoft-agent-framework.md) | Supported optional Microsoft Agent Framework runtime adapter, runtime selection, A2A setup, and migration from old experimental config. |
+| [workflow-backends.md](workflow-backends.md) | Durable workflow delegation, `maf-durable-http`, integration API and MCP tools, status model, and sample host. |
+| [a2a.md](a2a.md) | A2A v1 discovery, endpoint, authentication, and deployment contract through the Microsoft Agent Framework adapter. |
 | [MODEL_PROFILES.md](MODEL_PROFILES.md) | Provider-agnostic named model profiles, including Gemma-family setups. |
 | [PROMPT_CACHING.md](PROMPT_CACHING.md) | Provider-aware prompt caching hints, dialects, diagnostics. |
 | [PULSE.md](PULSE.md) | Runtime Pulse scheduled heartbeat turns, `HEARTBEAT.md`, alert suppression, and operator controls. |
