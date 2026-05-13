@@ -30,7 +30,9 @@ public sealed class ToolExecutionResult
 public sealed class OpenClawToolExecutor
 {
     private readonly Dictionary<string, ITool> _toolsByName;
+    private readonly IReadOnlyList<ToolDefinitionSnapshot> _toolSnapshots;
     private readonly AITool[] _toolDeclarations;
+    private readonly Dictionary<string, AITool> _toolDeclarationsByName;
     private readonly int _toolTimeoutSeconds;
     private readonly bool _requireToolApproval;
     private readonly HashSet<string> _approvalRequiredTools;
@@ -46,6 +48,7 @@ public sealed class OpenClawToolExecutor
     private readonly IRedactionPipeline _redaction;
     private readonly ISentinelSubstitutionService _sentinelSubstitution;
     private readonly IToolGovernanceService _toolGovernance;
+    private readonly IToolDeclarationFilter? _toolDeclarationFilter;
 
     public OpenClawToolExecutor(
         IReadOnlyList<ITool> tools,
@@ -63,10 +66,12 @@ public sealed class OpenClawToolExecutor
         ToolAuditLog? auditLog = null,
         IRedactionPipeline? redaction = null,
         ISentinelSubstitutionService? sentinelSubstitution = null,
-        IToolGovernanceService? toolGovernance = null)
+        IToolGovernanceService? toolGovernance = null,
+        IToolDeclarationFilter? toolDeclarationFilter = null)
     {
         _toolsByName = tools.ToDictionary(t => t.Name, StringComparer.Ordinal);
         _toolDeclarations = tools.Select(CreateDeclaration).Cast<AITool>().ToArray();
+        _toolDeclarationsByName = _toolDeclarations.ToDictionary(t => t.Name, StringComparer.Ordinal);
         _toolTimeoutSeconds = toolTimeoutSeconds;
         _requireToolApproval = requireToolApproval;
         _approvalRequiredTools = approvalRequiredTools
@@ -93,16 +98,52 @@ public sealed class OpenClawToolExecutor
         _redaction = redaction ?? new NoopRedactionPipeline();
         _sentinelSubstitution = sentinelSubstitution ?? new NoopSentinelSubstitutionService();
         _toolGovernance = toolGovernance ?? new NoopToolGovernanceService();
+        _toolDeclarationFilter = toolDeclarationFilter;
+        _toolSnapshots = tools
+            .Select(tool => ToolDefinitionSnapshotMapper.Create(tool, _config.Tooling.SemanticRouting.ToolTextMode))
+            .ToArray();
     }
 
     public IList<AITool> ToolDeclarations => _toolDeclarations;
 
     public IList<AITool> GetToolDeclarations(Session session)
+        => GetDeclarationsForNames(GetAllowedToolNames(session));
+
+    public async ValueTask<IList<AITool>> GetToolDeclarationsAsync(
+        Session session,
+        string userPrompt,
+        CancellationToken ct)
+    {
+        var toolNames = await GetAllowedToolNamesAsync(session, userPrompt, ct);
+        return GetDeclarationsForNames(toolNames);
+    }
+
+    public IReadOnlyList<string> GetAllowedToolNames(Session session)
     {
         var preset = _toolPresetResolver?.Resolve(session, _toolsByName.Keys);
         return _toolDeclarations
             .Where(item => IsToolAllowedForSession(session, item.Name, preset))
+            .Select(static item => item.Name)
             .ToArray();
+    }
+
+    public async ValueTask<IReadOnlyList<string>> GetAllowedToolNamesAsync(
+        Session session,
+        string userPrompt,
+        CancellationToken ct)
+    {
+        var allowed = GetAllowedToolNames(session);
+        if (_toolDeclarationFilter is null)
+            return allowed;
+
+        var selected = await _toolDeclarationFilter.FilterToolNamesAsync(
+            session,
+            userPrompt,
+            _toolSnapshots,
+            allowed,
+            ct);
+        var allowedSet = allowed.ToHashSet(StringComparer.Ordinal);
+        return selected.Where(allowedSet.Contains).Distinct(StringComparer.Ordinal).ToArray();
     }
 
     public bool SupportsStreaming(string toolName)
@@ -945,6 +986,18 @@ public sealed class OpenClawToolExecutor
             tool.Description,
             doc.RootElement.Clone(),
             returnJsonSchema: null);
+    }
+
+    private IList<AITool> GetDeclarationsForNames(IReadOnlyList<string> toolNames)
+    {
+        var declarations = new List<AITool>(toolNames.Count);
+        foreach (var toolName in toolNames)
+        {
+            if (_toolDeclarationsByName.TryGetValue(toolName, out var declaration))
+                declarations.Add(declaration);
+        }
+
+        return declarations;
     }
 
     private static string NormalizeApprovalToolName(string toolName) =>

@@ -29,6 +29,9 @@ using OpenClaw.PluginKit;
 using OpenClaw.Payments.Abstractions;
 using OpenClaw.Payments.Core;
 using OpenClaw.Payments.StripeLink;
+#if OPENCLAW_ENABLE_ONNX_EMBEDDINGS
+using OpenClaw.Embeddings.Onnx;
+#endif
 using TickerQ.DependencyInjection;
 
 namespace OpenClaw.Gateway.Composition;
@@ -148,6 +151,11 @@ internal static class CoreServicesExtensions
         services.AddSingleton<LiveSessionService>();
         services.AddSingleton<ToolPresetResolver>();
         services.AddSingleton<IToolPresetResolver>(sp => sp.GetRequiredService<ToolPresetResolver>());
+        services.AddSingleton(config.Tooling.SemanticRouting);
+        AddSemanticRoutingEmbeddingGenerator(services, config);
+        services.AddSingleton<IToolIndex, ToolIndex>();
+        services.AddSingleton<IToolRouter, ToolRouter>();
+        services.AddSingleton<IToolDeclarationFilter, ToolDeclarationFilter>();
         services.AddSingleton(sp =>
             new ToolExecutionRouter(
                 config,
@@ -229,6 +237,26 @@ internal static class CoreServicesExtensions
         services.AddSingleton<IAgentRuntimeFactory, NativeAgentRuntimeFactory>();
 
         return services;
+    }
+
+    private static void AddSemanticRoutingEmbeddingGenerator(IServiceCollection services, GatewayConfig config)
+    {
+        var routing = config.Tooling.SemanticRouting;
+        if (!routing.Enabled ||
+            !string.Equals(routing.EmbeddingProvider, "onnx", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+#if OPENCLAW_ENABLE_ONNX_EMBEDDINGS
+        services.AddOpenClawOnnxEmbeddings(routing, config.Memory.StoragePath);
+#else
+        if (!routing.FailOpen)
+        {
+            throw new InvalidOperationException(
+                "Tooling.SemanticRouting.EmbeddingProvider='onnx' requires building the gateway with -p:OpenClawEnableOnnxEmbeddings=true, or set FailOpen=true.");
+        }
+#endif
     }
 
     private static void AddFeatureStores(IServiceCollection services, GatewayConfig config)

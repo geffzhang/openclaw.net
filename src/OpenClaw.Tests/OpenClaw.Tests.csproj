@@ -3,6 +3,7 @@
     <IsPackable>false</IsPackable>
     <OpenClawEnableMempalace Condition="'$(OpenClawEnableMempalace)' == ''">false</OpenClawEnableMempalace>
     <OpenClawEnableOpenSandbox Condition="'$(OpenClawEnableOpenSandbox)' == ''">false</OpenClawEnableOpenSandbox>
+    <OpenClawEnableOnnxEmbeddings Condition="'$(OpenClawEnableOnnxEmbeddings)' == ''">false</OpenClawEnableOnnxEmbeddings>
     <RootNamespace>OpenClaw.Tests</RootNamespace>
     <InterceptorsNamespaces>$(InterceptorsNamespaces);Microsoft.AspNetCore.OpenApi.Generated</InterceptorsNamespaces>
   </PropertyGroup>
@@ -42,12 +43,18 @@
   <ItemGroup Condition="'$(OpenClawEnableOpenSandbox)' == 'true'">
     <ProjectReference Include="..\OpenClawNet.Sandbox.OpenSandbox\OpenClawNet.Sandbox.OpenSandbox.csproj" />
   </ItemGroup>
+  <ItemGroup Condition="'$(OpenClawEnableOnnxEmbeddings)' == 'true'">
+    <ProjectReference Include="..\OpenClaw.Embeddings.Onnx\OpenClaw.Embeddings.Onnx.csproj" />
+  </ItemGroup>
 
   <PropertyGroup Condition="'$(OpenClawEnableMempalace)' == 'true'">
     <DefineConstants>$(DefineConstants);OPENCLAW_ENABLE_MEMPALACE</DefineConstants>
   </PropertyGroup>
   <PropertyGroup Condition="'$(OpenClawEnableOpenSandbox)' == 'true'">
     <DefineConstants>$(DefineConstants);OPENCLAW_ENABLE_OPENSANDBOX</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(OpenClawEnableOnnxEmbeddings)' == 'true'">
+    <DefineConstants>$(DefineConstants);OPENCLAW_ENABLE_ONNX_EMBEDDINGS</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>

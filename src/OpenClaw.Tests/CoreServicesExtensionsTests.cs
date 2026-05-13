@@ -1,3 +1,4 @@
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -148,6 +149,93 @@ public sealed class CoreServicesExtensionsTests
             DeleteDirectoryIfPresent(tempPath);
         }
     }
+
+#if OPENCLAW_ENABLE_ONNX_EMBEDDINGS
+    [Fact]
+    public void AddOpenClawCoreServices_OnnxSemanticRouting_RegistersEmbeddingGenerator()
+    {
+        var tempPath = Path.Join(Path.GetTempPath(), "openclaw-core-services-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempPath);
+        try
+        {
+            var config = new GatewayConfig
+            {
+                Memory = new MemoryConfig
+                {
+                    StoragePath = tempPath
+                },
+                Tooling = new ToolingConfig
+                {
+                    SemanticRouting = new ToolSemanticRoutingConfig
+                    {
+                        Enabled = true,
+                        EmbeddingProvider = ToolSemanticRoutingEmbeddingProviders.Onnx,
+                        EnsureModelDownloaded = false
+                    }
+                }
+            };
+            var startup = new GatewayStartupContext
+            {
+                Config = config,
+                RuntimeState = new GatewayRuntimeState
+                {
+                    RequestedMode = "jit",
+                    EffectiveMode = GatewayRuntimeMode.Jit,
+                    DynamicCodeSupported = true
+                },
+                IsNonLoopbackBind = false
+            };
+
+            var services = new ServiceCollection();
+            services.AddLogging();
+            services.AddOptions();
+            services.AddOpenClawCoreServices(startup);
+
+            using var provider = services.BuildServiceProvider();
+
+            Assert.NotNull(provider.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>());
+        }
+        finally
+        {
+            DeleteDirectoryIfPresent(tempPath);
+        }
+    }
+#else
+    [Fact]
+    public void AddOpenClawCoreServices_OnnxSemanticRoutingWithoutBuildFlag_ThrowsWhenFailClosed()
+    {
+        var config = new GatewayConfig
+        {
+            Tooling = new ToolingConfig
+            {
+                SemanticRouting = new ToolSemanticRoutingConfig
+                {
+                    Enabled = true,
+                    EmbeddingProvider = ToolSemanticRoutingEmbeddingProviders.Onnx,
+                    FailOpen = false
+                }
+            }
+        };
+        var startup = new GatewayStartupContext
+        {
+            Config = config,
+            RuntimeState = new GatewayRuntimeState
+            {
+                RequestedMode = "jit",
+                EffectiveMode = GatewayRuntimeMode.Jit,
+                DynamicCodeSupported = true
+            },
+            IsNonLoopbackBind = false
+        };
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddOptions();
+
+        var ex = Assert.Throws<InvalidOperationException>(() => services.AddOpenClawCoreServices(startup));
+        Assert.Contains("OpenClawEnableOnnxEmbeddings", ex.Message, StringComparison.Ordinal);
+    }
+#endif
 
     [Fact]
     public void AddOpenClawCoreServices_MempalaceMemoryProvider_UsesApplicationStoppingCancellation()

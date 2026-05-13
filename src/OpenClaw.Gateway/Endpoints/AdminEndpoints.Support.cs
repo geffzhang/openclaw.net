@@ -1621,7 +1621,30 @@ internal static partial class AdminEndpoints
             EnableBrowserTool = source.EnableBrowserTool,
             AllowBrowserEvaluate = source.AllowBrowserEvaluate,
             BrowserHeadless = source.BrowserHeadless,
-            BrowserTimeoutSeconds = source.BrowserTimeoutSeconds
+            BrowserTimeoutSeconds = source.BrowserTimeoutSeconds,
+            UrlSafety = source.UrlSafety,
+            Toolsets = source.Toolsets,
+            Presets = source.Presets,
+            SurfaceBindings = source.SurfaceBindings,
+            SemanticRouting = new OpenClaw.Core.Abstractions.ToolSemanticRoutingConfig
+            {
+                Enabled = source.SemanticRouting.Enabled,
+                TopK = source.SemanticRouting.TopK,
+                MinScore = source.SemanticRouting.MinScore,
+                Mode = source.SemanticRouting.Mode,
+                IncludeFallbackTools = source.SemanticRouting.IncludeFallbackTools,
+                QueryCacheSize = source.SemanticRouting.QueryCacheSize,
+                ToolTextMode = source.SemanticRouting.ToolTextMode,
+                EmbeddingProvider = source.SemanticRouting.EmbeddingProvider,
+                EmbeddingModel = source.SemanticRouting.EmbeddingModel,
+                ModelPath = source.SemanticRouting.ModelPath,
+                CacheDirectory = source.SemanticRouting.CacheDirectory,
+                MaxSequenceLength = source.SemanticRouting.MaxSequenceLength,
+                NormalizeEmbeddings = source.SemanticRouting.NormalizeEmbeddings,
+                PreferQuantized = source.SemanticRouting.PreferQuantized,
+                EnsureModelDownloaded = source.SemanticRouting.EnsureModelDownloaded,
+                FailOpen = source.SemanticRouting.FailOpen
+            }
         };
 
     private static string NormalizeApprovalToolName(string toolName)

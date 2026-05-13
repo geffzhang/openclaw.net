@@ -326,6 +326,7 @@ public sealed class SessionDelegationChildSummary
 [JsonSerializable(typeof(UrlSafetyConfig))]
 [JsonSerializable(typeof(WebSocketConfig))]
 [JsonSerializable(typeof(ToolingConfig))]
+[JsonSerializable(typeof(OpenClaw.Core.Abstractions.ToolSemanticRoutingConfig))]
 [JsonSerializable(typeof(ToolGovernanceConfig))]
 [JsonSerializable(typeof(GovernanceAction))]
 [JsonSerializable(typeof(ToolGovernanceRiskLevel))]

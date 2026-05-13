@@ -3,6 +3,7 @@
     <RootNamespace>OpenClaw.Gateway</RootNamespace>
     <OutputType>Exe</OutputType>
     <OpenClawEnableOpenSandbox Condition="'$(OpenClawEnableOpenSandbox)' == ''">false</OpenClawEnableOpenSandbox>
+    <OpenClawEnableOnnxEmbeddings Condition="'$(OpenClawEnableOnnxEmbeddings)' == ''">false</OpenClawEnableOnnxEmbeddings>
     <PublishAot>true</PublishAot>
     <StripSymbols>true</StripSymbols>
     <OptimizationPreference>Size</OptimizationPreference>
@@ -32,7 +33,10 @@
     <ProjectReference Include="..\OpenClaw.Payments.StripeLink\OpenClaw.Payments.StripeLink.csproj" />
     <ProjectReference Include="..\OpenClaw.Plugins.Payment\OpenClaw.Plugins.Payment.csproj" />
   </ItemGroup>
-  <ItemGroup>
+  <ItemGroup Condition="'$(OpenClawEnableOnnxEmbeddings)' == 'true'">
+    <ProjectReference Include="..\OpenClaw.Embeddings.Onnx\OpenClaw.Embeddings.Onnx.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(OpenClawEnableMafExperiment)' == 'true'">
     <ProjectReference Include="..\OpenClaw.MicrosoftAgentFrameworkAdapter\OpenClaw.MicrosoftAgentFrameworkAdapter.csproj" />
     <PackageReference Include="A2A" Version="1.0.0-preview2" />
     <PackageReference Include="A2A.AspNetCore" Version="1.0.0-preview2" />
@@ -45,6 +49,9 @@
   </ItemGroup>
   <PropertyGroup Condition="'$(OpenClawEnableOpenSandbox)' == 'true'">
     <DefineConstants>$(DefineConstants);OPENCLAW_ENABLE_OPENSANDBOX</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(OpenClawEnableOnnxEmbeddings)' == 'true'">
+    <DefineConstants>$(DefineConstants);OPENCLAW_ENABLE_ONNX_EMBEDDINGS</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Anthropic" Version="12.11.0" />

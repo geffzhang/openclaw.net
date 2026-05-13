@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>OpenClaw.Embeddings.Onnx</RootNamespace>
+    <IsAotCompatible>false</IsAotCompatible>
+    <IsTrimmable>false</IsTrimmable>
+    <IsPackable>true</IsPackable>
+    <PackageId>OpenClaw.Embeddings.Onnx</PackageId>
+    <Description>Optional local ONNX embedding integration for OpenClaw.NET semantic tool routing.</Description>
+    <PackageTags>openclaw;embeddings;onnx;semantic-routing</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenClaw.Core\OpenClaw.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpenClaw.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ElBruno.LocalEmbeddings" Version="1.4.6" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.6" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.5" />
+  </ItemGroup>
+</Project>

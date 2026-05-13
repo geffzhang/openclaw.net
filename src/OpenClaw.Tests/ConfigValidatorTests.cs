@@ -8,6 +8,126 @@ namespace OpenClaw.Tests;
 public sealed class ConfigValidatorTests
 {
     [Fact]
+    public void Validate_SemanticRouting_DefaultsAreValidAndDisabled()
+    {
+        var config = new GatewayConfig();
+
+        var errors = ConfigValidator.Validate(config);
+
+        Assert.False(config.Tooling.SemanticRouting.Enabled);
+        Assert.Equal(12, config.Tooling.SemanticRouting.TopK);
+        Assert.DoesNotContain(errors, error => error.Contains("SemanticRouting", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_SemanticRouting_RejectsInvalidTopKModeAndModelPath()
+    {
+        var config = new GatewayConfig
+        {
+            Tooling = new ToolingConfig
+            {
+                SemanticRouting = new OpenClaw.Core.Abstractions.ToolSemanticRoutingConfig
+                {
+                    Enabled = true,
+                    TopK = 0,
+                    Mode = "unknown",
+                    ToolTextMode = "verbose",
+                    EmbeddingProvider = "onnx",
+                    ModelPath = Path.Combine(Path.GetTempPath(), $"missing-{Guid.NewGuid():N}.onnx")
+                }
+            }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+
+        Assert.Contains(errors, error => error.Contains("SemanticRouting.TopK", StringComparison.Ordinal));
+        Assert.Contains(errors, error => error.Contains("SemanticRouting.Mode", StringComparison.Ordinal));
+        Assert.Contains(errors, error => error.Contains("SemanticRouting.ToolTextMode", StringComparison.Ordinal));
+        Assert.Contains(errors, error => error.Contains("SemanticRouting.ModelPath does not exist", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_SemanticRouting_OnnxProviderCanUseModelNameWithoutModelPath()
+    {
+        var config = new GatewayConfig
+        {
+            Tooling = new ToolingConfig
+            {
+                SemanticRouting = new OpenClaw.Core.Abstractions.ToolSemanticRoutingConfig
+                {
+                    Enabled = true,
+                    EmbeddingProvider = "ONNX",
+                    EmbeddingModel = "sentence-transformers/all-MiniLM-L6-v2",
+                    ModelPath = null
+                }
+            }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+
+        Assert.DoesNotContain(errors, error => error.Contains("SemanticRouting", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_SemanticRouting_RejectsUnsupportedEmbeddingProvider()
+    {
+        var config = new GatewayConfig
+        {
+            Tooling = new ToolingConfig
+            {
+                SemanticRouting = new OpenClaw.Core.Abstractions.ToolSemanticRoutingConfig
+                {
+                    Enabled = true,
+                    EmbeddingProvider = "local"
+                }
+            }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+
+        Assert.Contains(errors, error => error.Contains("SemanticRouting.EmbeddingProvider", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_SemanticRouting_BlankEmbeddingProviderIsAllowed()
+    {
+        var config = new GatewayConfig
+        {
+            Tooling = new ToolingConfig
+            {
+                SemanticRouting = new OpenClaw.Core.Abstractions.ToolSemanticRoutingConfig
+                {
+                    Enabled = true,
+                    EmbeddingProvider = " "
+                }
+            }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+
+        Assert.DoesNotContain(errors, error => error.Contains("SemanticRouting.EmbeddingProvider", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_SemanticRouting_RejectsInvalidMaxSequenceLength()
+    {
+        var config = new GatewayConfig
+        {
+            Tooling = new ToolingConfig
+            {
+                SemanticRouting = new OpenClaw.Core.Abstractions.ToolSemanticRoutingConfig
+                {
+                    MaxSequenceLength = 0
+                }
+            }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+
+        Assert.Contains(errors, error => error.Contains("SemanticRouting.MaxSequenceLength", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Validate_CronStepZero_ReturnsError()
     {
         var config = new GatewayConfig

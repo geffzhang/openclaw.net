@@ -1,4 +1,5 @@
 using OpenClaw.Core.Security;
+using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Setup;
 using OpenClaw.Core.Plugins;
@@ -111,6 +112,7 @@ public static class ConfigValidator
         // Tooling
         if (config.Tooling.ToolTimeoutSeconds < 0)
             errors.Add($"Tooling.ToolTimeoutSeconds must be >= 0 (got {config.Tooling.ToolTimeoutSeconds}).");
+        ValidateToolSemanticRouting(config.Tooling.SemanticRouting, errors);
         ValidateExternalCli(config.ExternalCli, errors);
 
         ValidateUrlSafety("Tooling.UrlSafety", config.Tooling.UrlSafety, errors);
@@ -424,6 +426,56 @@ public static class ConfigValidator
 
             if (credentialSourceCount > 1)
                 errors.Add($"CodingBackends.{backend.BackendId}.Credentials must specify at most one of SecretRef, TokenFilePath, or ConnectedAccountId.");
+        }
+    }
+
+    private static void ValidateToolSemanticRouting(ToolSemanticRoutingConfig config, List<string> errors)
+    {
+        if (config.TopK <= 0)
+            errors.Add($"Tooling.SemanticRouting.TopK must be > 0 (got {config.TopK}).");
+
+        if (config.MinScore < 0)
+            errors.Add($"Tooling.SemanticRouting.MinScore must be >= 0 (got {config.MinScore}).");
+
+        if (config.QueryCacheSize < 0)
+            errors.Add($"Tooling.SemanticRouting.QueryCacheSize must be >= 0 (got {config.QueryCacheSize}).");
+
+        if (config.MaxSequenceLength <= 0)
+            errors.Add($"Tooling.SemanticRouting.MaxSequenceLength must be > 0 (got {config.MaxSequenceLength}).");
+
+        var mode = ToolSemanticRoutingModes.Normalize(config.Mode);
+        if (mode is not (ToolSemanticRoutingModes.Fast or ToolSemanticRoutingModes.Balanced or ToolSemanticRoutingModes.Accurate))
+            errors.Add("Tooling.SemanticRouting.Mode must be one of: fast, balanced, accurate.");
+
+        var toolTextMode = ToolSemanticRoutingToolTextModes.Normalize(config.ToolTextMode);
+        if (toolTextMode is not (ToolSemanticRoutingToolTextModes.NameDescription or ToolSemanticRoutingToolTextModes.SchemaSummary or ToolSemanticRoutingToolTextModes.FullSchema))
+            errors.Add("Tooling.SemanticRouting.ToolTextMode must be one of: name-description, schema-summary, full-schema.");
+
+        var embeddingProvider = ToolSemanticRoutingEmbeddingProviders.Normalize(config.EmbeddingProvider);
+        if (embeddingProvider is not null and not ToolSemanticRoutingEmbeddingProviders.Onnx)
+            errors.Add("Tooling.SemanticRouting.EmbeddingProvider must be one of: onnx.");
+
+        if (!config.Enabled)
+            return;
+
+        if (!string.IsNullOrWhiteSpace(config.ModelPath))
+        {
+            var resolvedModelPath = ResolveConfiguredPath(config.ModelPath);
+            if (string.IsNullOrWhiteSpace(resolvedModelPath))
+            {
+                errors.Add("Tooling.SemanticRouting.ModelPath must resolve to a non-empty path.");
+            }
+            else if (!Directory.Exists(resolvedModelPath) && !File.Exists(resolvedModelPath))
+            {
+                errors.Add($"Tooling.SemanticRouting.ModelPath does not exist: {config.ModelPath}");
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(config.CacheDirectory))
+        {
+            var resolvedCacheDirectory = ResolveConfiguredPath(config.CacheDirectory);
+            if (string.IsNullOrWhiteSpace(resolvedCacheDirectory))
+                errors.Add("Tooling.SemanticRouting.CacheDirectory must resolve to a non-empty path.");
         }
     }
 

@@ -392,6 +392,7 @@ public sealed class ToolingConfig
     public Dictionary<string, ToolsetConfig> Toolsets { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, ToolPresetConfig> Presets { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, string> SurfaceBindings { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public OpenClaw.Core.Abstractions.ToolSemanticRoutingConfig SemanticRouting { get; set; } = new();
 }
 
 public sealed class PaymentConfig

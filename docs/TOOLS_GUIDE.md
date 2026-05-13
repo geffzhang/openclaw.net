@@ -14,6 +14,59 @@ For example, if you say *"Email my weekly report to my boss,"* the agent will au
 ### Tool Names (Important)
 Tool **names** are the stable identifiers used by the agent and tool-approval system (e.g. `home_assistant_write`). Some parts of the codebase refer to “plugin ids” (often hyphenated, like `home-assistant`) — those are **not** tool names.
 
+### Semantic Tool Routing (Optional)
+Semantic routing is disabled by default. When enabled, OpenClaw first applies the existing preset, allowlist, surface binding, approval, governance, and sandbox policies, then reduces the tool declarations sent to the model to the most relevant top-K tools for the current user turn. It never grants new permissions. Execution still goes through the normal `OpenClawToolExecutor.ExecuteAsync` checks, so a tool that was not declared cannot bypass preset, approval, governance, or sandbox validation.
+
+Configuration lives under `OpenClaw:Tooling:SemanticRouting`:
+
+```json
+{
+  "Tooling": {
+    "SemanticRouting": {
+      "Enabled": false,
+      "TopK": 12,
+      "MinScore": 0,
+      "Mode": "balanced",
+      "IncludeFallbackTools": true,
+      "QueryCacheSize": 128,
+      "ToolTextMode": "schema-summary",
+      "EmbeddingProvider": null,
+      "EmbeddingModel": "sentence-transformers/all-MiniLM-L6-v2",
+      "ModelPath": null,
+      "CacheDirectory": null,
+      "MaxSequenceLength": 512,
+      "NormalizeEmbeddings": false,
+      "PreferQuantized": false,
+      "EnsureModelDownloaded": true,
+      "FailOpen": true
+    }
+  }
+}
+```
+
+Modes:
+- `fast`: cosine similarity between the user prompt embedding and tool embeddings.
+- `balanced`: cosine similarity plus lightweight lexical boosts for tool names, descriptions, and parameter summaries.
+- `accurate`: reserved for future expanded routing logic; currently follows the balanced path.
+
+Embedding behavior:
+- Core abstractions depend only on `Microsoft.Extensions.AI`.
+- The runtime consumes `IEmbeddingGenerator<string, Embedding<float>>` from DI.
+- If semantic routing is enabled and no embedding generator is registered, `FailOpen=true` logs a warning and returns the preset-filtered full tool set. `FailOpen=false` fails the request.
+- Local ONNX embedding is provided by the optional `OpenClaw.Embeddings.Onnx` integration, built with `-p:OpenClawEnableOnnxEmbeddings=true`. Set `EmbeddingProvider="onnx"` and either provide `ModelPath` to an existing local model directory/file or leave it empty to use `EmbeddingModel` with the configured cache directory.
+
+Example local ONNX build:
+
+```bash
+dotnet build src/OpenClaw.Gateway/OpenClaw.Gateway.csproj -p:OpenClawEnableOnnxEmbeddings=true
+```
+
+When `ModelPath` is empty and `EnsureModelDownloaded=true`, the first semantic-routing use initializes the model from `EmbeddingModel` and stores files under `CacheDirectory` or `Memory:StoragePath/cache/embeddings/onnx`. For fully offline hosts, pre-download the ONNX model assets and set `ModelPath`; set `EnsureModelDownloaded=false` to avoid network access at runtime.
+
+Tool text is built from tool name, description, and a compact parameter schema summary by default. Dynamic tools, plugins, and MCP tools are indexed incrementally as the runtime sees the current tool list. The first implementation uses an in-memory index and query cache; persistent embedding caches should live under a configurable gateway data/cache path, not in the repository.
+
+Semantic routing is supported by both the native orchestrator and the Microsoft Agent Framework experimental orchestrator, including streaming turns and `delegate_agent` when delegation is enabled.
+
 ### How to Install New Tools
 
 There are two primary ways to add new capabilities to your agent:
