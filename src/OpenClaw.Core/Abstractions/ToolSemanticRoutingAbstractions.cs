@@ -25,6 +25,7 @@ public sealed class ToolSemanticRoutingConfig
 public static class ToolSemanticRoutingEmbeddingProviders
 {
     public const string Onnx = "onnx";
+    public const string Embedded = "embedded";
 
     public static string? Normalize(string? provider)
         => string.IsNullOrWhiteSpace(provider) ? null : provider.Trim().ToLowerInvariant();

@@ -244,21 +244,31 @@ internal static class CoreServicesExtensions
     private static void AddSemanticRoutingEmbeddingGenerator(IServiceCollection services, GatewayConfig config)
     {
         var routing = config.Tooling.SemanticRouting;
-        if (!routing.Enabled ||
-            !string.Equals(routing.EmbeddingProvider, "onnx", StringComparison.OrdinalIgnoreCase))
-        {
+        if (!routing.Enabled)
             return;
-        }
 
-#if OPENCLAW_ENABLE_ONNX_EMBEDDINGS
-        services.AddOpenClawOnnxEmbeddings(routing, config.Memory.StoragePath);
-#else
-        if (!routing.FailOpen)
+        var provider = ToolSemanticRoutingEmbeddingProviders.Normalize(routing.EmbeddingProvider);
+        switch (provider)
         {
-            throw new InvalidOperationException(
-                "Tooling.SemanticRouting.EmbeddingProvider='onnx' requires building the gateway with -p:OpenClawEnableOnnxEmbeddings=true, or set FailOpen=true.");
-        }
+            case ToolSemanticRoutingEmbeddingProviders.Onnx:
+#if OPENCLAW_ENABLE_ONNX_EMBEDDINGS
+                services.AddOpenClawOnnxEmbeddings(routing, config.Memory.StoragePath);
+#else
+                if (!routing.FailOpen)
+                {
+                    throw new InvalidOperationException(
+                        "Tooling.SemanticRouting.EmbeddingProvider='onnx' requires building the gateway with -p:OpenClawEnableOnnxEmbeddings=true, or set FailOpen=true.");
+                }
 #endif
+                break;
+
+            case ToolSemanticRoutingEmbeddingProviders.Embedded:
+                services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(sp => new EmbeddedLocalEmbeddingGenerator(
+                    routing,
+                    config.LocalInference,
+                    logger: sp.GetService<ILogger<EmbeddedLocalEmbeddingGenerator>>()));
+                break;
+        }
     }
 
     private static void AddFeatureStores(IServiceCollection services, GatewayConfig config)

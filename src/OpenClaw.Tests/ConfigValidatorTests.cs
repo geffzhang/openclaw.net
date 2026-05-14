@@ -69,6 +69,28 @@ public sealed class ConfigValidatorTests
     }
 
     [Fact]
+    public void Validate_SemanticRouting_EmbeddedProviderCanUseModelNameWithoutModelPath()
+    {
+        var config = new GatewayConfig
+        {
+            Tooling = new ToolingConfig
+            {
+                SemanticRouting = new OpenClaw.Core.Abstractions.ToolSemanticRoutingConfig
+                {
+                    Enabled = true,
+                    EmbeddingProvider = "EMBEDDED",
+                    EmbeddingModel = "gemma-local-small-q4",
+                    ModelPath = null
+                }
+            }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+
+        Assert.DoesNotContain(errors, error => error.Contains("SemanticRouting", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Validate_SemanticRouting_RejectsUnsupportedEmbeddingProvider()
     {
         var config = new GatewayConfig

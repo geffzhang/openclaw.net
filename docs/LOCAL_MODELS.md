@@ -92,9 +92,12 @@ The embedded provider expects the sidecar to expose:
 GET /health
 GET /v1/models
 POST /v1/chat/completions
+POST /v1/embeddings
 ```
 
 Streaming uses server-sent events when the model/profile requests streaming.
+
+Semantic routing uses `POST /v1/embeddings` when `OpenClaw:Tooling:SemanticRouting:EmbeddingProvider` is `embedded`. The endpoint should accept an OpenAI-compatible request with `model` and array `input`, and return `data[]` items containing `index` and `embedding` fields. A chat-only sidecar can still serve embedded chat, but semantic routing requires embeddings support.
 
 For `llama.cpp`, OpenClaw starts `llama-server` with the model path, host, port, context, optional Jinja/chat template flags, multimodal projector, media path, reasoning flags, and draft-model flags.
 

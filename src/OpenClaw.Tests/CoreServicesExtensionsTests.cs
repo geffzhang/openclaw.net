@@ -150,6 +150,63 @@ public sealed class CoreServicesExtensionsTests
         }
     }
 
+    [Fact]
+    public void AddOpenClawCoreServices_EmbeddedSemanticRouting_RegistersEmbeddingGenerator()
+    {
+        var tempPath = Path.Join(Path.GetTempPath(), "openclaw-core-services-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempPath);
+        try
+        {
+            var config = new GatewayConfig
+            {
+                Memory = new MemoryConfig
+                {
+                    StoragePath = tempPath
+                },
+                LocalInference = new LocalInferenceConfig
+                {
+                    Enabled = true,
+                    AutoStart = false,
+                    Port = 8080
+                },
+                Tooling = new ToolingConfig
+                {
+                    SemanticRouting = new ToolSemanticRoutingConfig
+                    {
+                        Enabled = true,
+                        EmbeddingProvider = ToolSemanticRoutingEmbeddingProviders.Embedded,
+                        EmbeddingModel = "gemma-local-small-q4"
+                    }
+                }
+            };
+            var startup = new GatewayStartupContext
+            {
+                Config = config,
+                RuntimeState = new GatewayRuntimeState
+                {
+                    RequestedMode = "jit",
+                    EffectiveMode = GatewayRuntimeMode.Jit,
+                    DynamicCodeSupported = true
+                },
+                IsNonLoopbackBind = false
+            };
+
+            var services = new ServiceCollection();
+            services.AddLogging();
+            services.AddOptions();
+            services.AddOpenClawCoreServices(startup);
+
+            using var provider = services.BuildServiceProvider();
+
+            var generator = provider.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>();
+            Assert.Equal("OpenClaw.Gateway.Extensions.EmbeddedLocalEmbeddingGenerator", generator.GetType().FullName);
+        }
+        finally
+        {
+            DeleteDirectoryIfPresent(tempPath);
+        }
+    }
+
 #if OPENCLAW_ENABLE_ONNX_EMBEDDINGS
     [Fact]
     public void AddOpenClawCoreServices_OnnxSemanticRouting_RegistersEmbeddingGenerator()

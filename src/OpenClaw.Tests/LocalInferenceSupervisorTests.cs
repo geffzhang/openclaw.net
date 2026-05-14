@@ -196,6 +196,18 @@ public sealed class LocalInferenceSupervisorTests : IDisposable
     }
 
     [Fact]
+    public void EmbeddedEmbeddingSupervisor_PassesEmbeddingFlagToLlamaServer()
+    {
+        var supervisor = new LocalInferenceSupervisor(
+            new LocalInferenceConfig(),
+            enableEmbeddings: true);
+        var package = GetPackage();
+        var startInfo = InvokeCreateStartInfo(supervisor, "llama-server", package, "/models/gemma.gguf", 8080);
+
+        Assert.Contains("--embedding", startInfo.ArgumentList);
+    }
+
+    [Fact]
     public async Task EmbeddedClient_StartsFakeLiteRtAdapterWithCorrectArgs()
     {
         if (OperatingSystem.IsWindows() || !Python3Available())
@@ -385,6 +397,20 @@ public sealed class LocalInferenceSupervisorTests : IDisposable
         Assert.True(LocalModelPackageCatalog.TryGet("gemma-local-small-q4", out var package));
         Assert.NotNull(package);
         return package!;
+    }
+
+    private static ProcessStartInfo InvokeCreateStartInfo(
+        LocalInferenceSupervisor supervisor,
+        string runtimePath,
+        LocalModelPackageDefinition package,
+        string modelPath,
+        int port)
+    {
+        var method = typeof(LocalInferenceSupervisor).GetMethod(
+            "CreateStartInfo",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        Assert.NotNull(method);
+        return Assert.IsType<ProcessStartInfo>(method!.Invoke(supervisor, [runtimePath, package, modelPath, port]));
     }
 
     private sealed class FakePackageSupervisor : LocalInferenceSupervisor

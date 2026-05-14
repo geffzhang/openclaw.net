@@ -54,11 +54,35 @@ Embedding behavior:
 - The runtime consumes `IEmbeddingGenerator<string, Embedding<float>>` from DI.
 - If semantic routing is enabled and no embedding generator is registered, `FailOpen=true` logs a warning and returns the preset-filtered full tool set. `FailOpen=false` fails the request.
 - Local ONNX embedding is provided by the optional `OpenClaw.Embeddings.Onnx` integration, built with `-p:OpenClawEnableOnnxEmbeddings=true`. Set `EmbeddingProvider="onnx"` and either provide `ModelPath` to an existing local model directory/file or leave it empty to use `EmbeddingModel` with the configured cache directory.
+- Embedded local embedding uses the managed local sidecar from `LOCAL_MODELS.md`. Set `EmbeddingProvider="embedded"` and set `EmbeddingModel` to the embedded package/model id, such as `gemma-local-small-q4`. The sidecar must expose `POST /v1/embeddings`; `/v1/chat/completions` alone is not enough for semantic routing.
 
 Example local ONNX build:
 
 ```bash
 dotnet build src/OpenClaw.Gateway/OpenClaw.Gateway.csproj -p:OpenClawEnableOnnxEmbeddings=true
+```
+
+Example embedded local semantic routing:
+
+```json
+{
+  "OpenClaw": {
+    "LocalInference": {
+      "Enabled": true,
+      "AutoStart": true,
+      "RuntimePath": "llama-server"
+    },
+    "Tooling": {
+      "SemanticRouting": {
+        "Enabled": true,
+        "EmbeddingProvider": "embedded",
+        "EmbeddingModel": "gemma-local-small-q4",
+        "TopK": 12,
+        "FailOpen": true
+      }
+    }
+  }
+}
 ```
 
 When `ModelPath` is empty and `EnsureModelDownloaded=true`, the first semantic-routing use initializes the model from `EmbeddingModel` and stores files under `CacheDirectory` or `Memory:StoragePath/cache/embeddings/onnx`. For fully offline hosts, pre-download the ONNX model assets and set `ModelPath`; set `EnsureModelDownloaded=false` to avoid network access at runtime.

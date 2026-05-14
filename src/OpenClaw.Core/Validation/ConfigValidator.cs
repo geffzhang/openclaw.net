@@ -461,8 +461,8 @@ public static class ConfigValidator
             errors.Add("Tooling.SemanticRouting.ToolTextMode must be one of: name-description, schema-summary, full-schema.");
 
         var embeddingProvider = ToolSemanticRoutingEmbeddingProviders.Normalize(config.EmbeddingProvider);
-        if (embeddingProvider is not null and not ToolSemanticRoutingEmbeddingProviders.Onnx)
-            errors.Add("Tooling.SemanticRouting.EmbeddingProvider must be one of: onnx.");
+        if (embeddingProvider is not null and not ToolSemanticRoutingEmbeddingProviders.Onnx and not ToolSemanticRoutingEmbeddingProviders.Embedded)
+            errors.Add("Tooling.SemanticRouting.EmbeddingProvider must be one of: onnx, embedded.");
 
         if (!config.Enabled)
             return;

@@ -27,6 +27,7 @@ internal class LocalInferenceSupervisor : IAsyncDisposable, IDisposable
     private readonly LocalInferenceConfig _config;
     private readonly ILogger _logger;
     private readonly HttpClient _httpClient;
+    private readonly bool _enableEmbeddings;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private Process? _process;
     private LocalInferenceEndpoint? _endpoint;
@@ -34,11 +35,16 @@ internal class LocalInferenceSupervisor : IAsyncDisposable, IDisposable
     private bool _disposed;
     private string? _lastError;
 
-    public LocalInferenceSupervisor(LocalInferenceConfig config, ILogger? logger = null, HttpClient? httpClient = null)
+    public LocalInferenceSupervisor(
+        LocalInferenceConfig config,
+        ILogger? logger = null,
+        HttpClient? httpClient = null,
+        bool enableEmbeddings = false)
     {
         _config = config;
         _logger = logger ?? NullLogger.Instance;
         _httpClient = httpClient ?? HttpClientFactory.Create(allowAutoRedirect: false);
+        _enableEmbeddings = enableEmbeddings;
     }
 
     public LocalInferenceStatus GetStatus()
@@ -242,6 +248,9 @@ internal class LocalInferenceSupervisor : IAsyncDisposable, IDisposable
         var gpuLayers = ResolveValue(_config.GpuLayers, package.Runtime.GpuLayers);
         if (!string.Equals(gpuLayers, "auto", StringComparison.OrdinalIgnoreCase))
             args.AddRange(["--n-gpu-layers", gpuLayers]);
+
+        if (_enableEmbeddings)
+            args.Add("--embedding");
 
         if (_config.EnableJinja || package.Runtime.EnableJinja || package.Capabilities.SupportsTools)
             args.Add("--jinja");
