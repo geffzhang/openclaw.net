@@ -36,7 +36,7 @@
   <ItemGroup Condition="'$(OpenClawEnableOnnxEmbeddings)' == 'true'">
     <ProjectReference Include="..\OpenClaw.Embeddings.Onnx\OpenClaw.Embeddings.Onnx.csproj" />
   </ItemGroup>
-  <ItemGroup Condition="'$(OpenClawEnableMafExperiment)' == 'true'">
+  <ItemGroup>
     <ProjectReference Include="..\OpenClaw.MicrosoftAgentFrameworkAdapter\OpenClaw.MicrosoftAgentFrameworkAdapter.csproj" />
     <PackageReference Include="A2A" Version="1.0.0-preview2" />
     <PackageReference Include="A2A.AspNetCore" Version="1.0.0-preview2" />
