@@ -36,6 +36,7 @@ OpenClaw.NET keeps plugin compatibility explicit by runtime mode. The goal is to
 | `api.registerCommand()` | Supported with caveats | `jit` only. Registered as dynamic chat commands. |
 | `api.on(...)` | Supported with caveats | `jit` only. `tool:before` / `tool:after` hooks are bridged with timeout protections. |
 | `api.registerProvider()` | Supported with caveats | `jit` only. Plugin-provided LLMs are wired through the dynamic provider seam. |
+| `OpenClaw.Providers.MicrosoftExtensionsAI` | Supported with caveats | `jit` only through native dynamic plugins. Use this to bring an arbitrary `IChatClient`; AOT users should use built-in providers or OpenAI-compatible endpoints. |
 | Standalone `.js`, `.mjs`, `.ts` in `.openclaw/extensions` | Supported with caveats | `.ts` requires local `jiti`. |
 | Manifest/package discovery via `Plugins:Load:Paths` | Supported | Includes `openclaw.plugin.json` and `package.json` `openclaw.extensions`. |
 | `openclaw plugins install --dry-run` trust inspection | Supported | Prints trust level, declared surface, diagnostics, and blocks install when compatibility errors are present. |
@@ -59,17 +60,19 @@ These APIs are not bridged. If a plugin uses them, initialization fails fast wit
 
 ## Canvas and A2UI Compatibility
 
-OpenClaw.NET ships a v1 Canvas/A2UI workspace for websocket clients. The supported target is local Canvas content plus A2UI v0.8 JSONL; remote webpage Canvas control and A2UI v0.9 surfaces remain intentionally unsupported. See [CANVAS_A2UI.md](CANVAS_A2UI.md).
+OpenClaw.NET ships a Canvas/A2UI workspace for websocket clients. The supported target is local Canvas content, A2UI v0.8 JSONL compatibility, and A2UI v0.9 structured surfaces with catalog negotiation; remote webpage Canvas control remains intentionally unsupported. See [CANVAS_A2UI.md](CANVAS_A2UI.md).
 
 | Surface | Status | Notes |
 | --- | --- | --- |
-| Canvas present/hide/snapshot commands | Supported | Typed websocket envelopes routed through the session-scoped broker. |
+| Canvas present/hide/snapshot commands | Supported | Typed websocket envelopes routed through the session-scoped broker. Snapshots can target a specific `surfaceId`. |
 | Local Canvas navigation | Supported with caveats | `about:blank` is supported. Inline local HTML is supported in webchat via sandboxed `srcdoc`; Companion reports an unsupported diagnostic without a native WebView. |
 | Remote webpage Canvas navigation/eval | Not supported | `http:` and `https:` URLs are rejected; use the browser tool for remote pages. |
-| A2UI v0.8 JSONL rendering | Supported | Webchat and Companion render text, markdown, card, button, input, select, checklist, table, image, progress, and simple chart frames. |
-| A2UI interaction event feedback | Supported | Client events return as structured `a2ui_event` session turns. |
-| A2UI eval | Supported with caveats | The gateway tool is capability-gated, but no first-party v1 client advertises `a2ui.eval`; webchat and Companion return unsupported diagnostics. |
-| A2UI v0.9 `createSurface` | Not supported | Validation rejects it with an explicit diagnostic. |
+| A2UI v0.8 JSONL rendering | Supported | Webchat and Companion render text, markdown, card, button, input, select, checklist, table, image, progress, and simple chart frames through `a2ui_push`. |
+| A2UI v0.9 structured surfaces | Supported | `a2ui_create_surface`, `a2ui_update_components`, `a2ui_update_data_model`, `a2ui_delete_surface`, and `a2ui_sync_ui_to_data` are capability-gated on `a2ui.v0_9`. |
+| A2UI catalog negotiation | Supported | Clients advertise `supportedCatalogIds`; the broker chooses or validates the requested catalog and locks it per `senderId + sessionId + surfaceId`. |
+| A2UI interaction feedback | Supported | v0.8 client events return as `a2ui_event`; v0.9 surface actions return as `a2ui_action` session turns. |
+| A2UI eval | Supported with caveats | The gateway tool is capability-gated, but no first-party client advertises `a2ui.eval`; webchat and Companion return unsupported diagnostics. |
+| Advanced AGenUI components | Supported with caveats | Webchat and Companion render native subsets and use conservative placeholders/diagnostics for media, carousel, web, or unsupported advanced components. |
 
 ## Channel Compatibility
 

@@ -2,6 +2,8 @@
 
 This guide provides a comprehensive overview of the native tools available in OpenClaw.NET and how to configure them securely.
 
+> **Total tools: 80+ registered tool surfaces** (native C# `ITool` / `IToolWithContext` implementations plus optional and dynamic bridge surfaces across `Agent`, `Core`, `Gateway`, `Protocols`, `Plugins`, `MCP App`, and `SemanticKernelAdapter`). The active set depends on configuration. Updated 2026-06-29.
+
 ---
 
 ## 🚀 How to Use / Install Tools
@@ -32,6 +34,32 @@ There are two primary ways to add new capabilities to your agent:
    - `Runtime:Mode=jit`: additionally supports `registerChannel`, `registerCommand`, `registerProvider`, and `api.on(...)`.
    - Unsupported extension-host APIs, or JIT-only capabilities in AOT mode, fail fast with explicit diagnostics instead of partially loading.
    - *For the exact matrix and current proof points, see the [Compatibility Guide](COMPATIBILITY.md).*
+
+---
+
+## 📊 Tool Inventory (80+ tool surfaces, as of 2026-06-29)
+
+| Category | Tools |
+|----------|-------|
+| File & Shell | `shell`, `read_file`, `write_file`, `edit_file`, `apply_patch`, `process` |
+| Memory | `memory`, `memory_search`, `memory_get`, `project_memory` |
+| Web & Search | `browser`, `web_search`, `web_fetch`, `x_search` |
+| Code & Execution | `code_exec`, `git`, `pdf_read` |
+| Communication | `email`, `message`, `inbox_zero` |
+| Database & Notion | `database`, `notion`, `notion_write` |
+| Home Automation | `home_assistant`, `home_assistant_write`, `mqtt`, `mqtt_publish` |
+| Calendar & Media | `calendar`, `image_gen`, `vision_analyze`, `text_to_speech` |
+| Sessions & Delegation | `sessions`, `delegate_agent` |
+| Canvas & A2UI | `canvas_present`, `canvas_hide`, `canvas_navigate`, `canvas_snapshot`, `a2ui_push`, `a2ui_reset`, `a2ui_eval`, `a2ui_create_surface`, `a2ui_update_components`, `a2ui_update_data_model`, `a2ui_delete_surface`, `a2ui_sync_ui_to_data` |
+| Gateway & Admin | `automation`, `cron`, `gateway`, `agents_list`, `profile_read`, `profile_write`, `session_search`, `sessions_history`, `sessions_send`, `sessions_spawn`, `sessions_yield`, `session_status`, `todo` |
+| Goal & Loop | `get_goal`, `create_goal`, `update_goal`, `loop_control` |
+| FractalMemory | `fractal_memory_search`, `fractal_memory_open`, `fractal_memory_recent`, `fractal_memory_export`, `fractal_memory_validate`, `fractal_memory_handoff_create`, `fractal_memory_index_refresh` |
+| MetaSkill | `emit_text`, `meta_skill_fill_slots`, `meta_skill_assemble`, `meta_skill_lint_run`, `meta_skill_smoke_run`, `meta_skill_runtime_e2e_run`, `meta_skill_persist_proposal` |
+| Skills | `load_skill`, `read_skill_resource`, `meta_invoke`, `list_tools` |
+| External & MCP | `external_cli`, MCP App local tool names discovered from `openclaw.mcpapp.json` and registered under plugin id `mcpapp:{appId}` |
+| Semantic Kernel | `semantic_kernel`, plus optional mapped SK function tools |
+| Payment & Mempalace | `payment`, `mempalace_kg` |
+| Streaming & Test | `stream_echo` (env-gated), bridged plugin tools (dynamic) |
 
 ---
 
@@ -88,15 +116,19 @@ Gateway-registered first-party payment tool over the native payment runtime. Dis
 - Safety: money-moving actions are approval-gated by policy; tool results include safe metadata only.
 - Docs: [plugins/payment.md](plugins/payment.md) and [security/payments.md](security/payments.md).
 
-### 7b. Canvas and A2UI Tools (`canvas_present`, `canvas_hide`, `canvas_navigate`, `canvas_snapshot`, `a2ui_push`, `a2ui_reset`, `a2ui_eval`)
+### 7b. Canvas and A2UI Tools (`canvas_present`, `canvas_hide`, `canvas_navigate`, `canvas_snapshot`, `a2ui_push`, `a2ui_reset`, `a2ui_eval`, `a2ui_create_surface`, `a2ui_update_components`, `a2ui_update_data_model`, `a2ui_delete_surface`, `a2ui_sync_ui_to_data`)
+
 Control the current websocket session's Canvas visual workspace.
 - **Config**: `OpenClaw:Canvas:*`
 - **Scope**: websocket sessions only; commands are routed to the active client sender for the current session.
-- **A2UI**: `a2ui_push` accepts A2UI v0.8 JSONL frames for text, markdown, card, button, input, select, checklist, table, image, progress, and simple chart components.
+- **A2UI v0.8**: `a2ui_push` accepts JSONL frames for text, markdown, card, button, input, select, checklist, table, image, progress, and simple chart components.
+- **A2UI v0.9**: structured surface tools create, update, sync, and delete independent `surfaceId` contexts with component arrays and data models.
+- **Catalogs**: v0.9 tools use client-advertised `supportedCatalogIds`; the broker validates requested catalogs and locks the selected catalog for each surface lifecycle.
 - **Navigation**: `canvas_navigate` supports inline local HTML and `about:blank`; remote `http:` / `https:` Canvas navigation is rejected. Use the `browser` tool for remote webpages.
-- **Eval**: `a2ui_eval` is capability-gated. First-party v1 clients do not advertise `a2ui.eval`, so browser-side script execution remains disabled by default.
-- **Snapshots**: `canvas_snapshot` returns lightweight JSON state, not a remote browser screenshot.
+- **Eval**: `a2ui_eval` is capability-gated. First-party clients do not advertise `a2ui.eval`, so browser-side script execution remains disabled by default.
+- **Snapshots**: `canvas_snapshot` returns lightweight JSON state for the requested surface, not a remote browser screenshot.
 - **Safety**: non-loopback deployments must explicitly opt in with `OpenClaw:Canvas:AllowOnPublicBind=true`.
+- **Details**: see [CANVAS_A2UI.md](CANVAS_A2UI.md).
 
 ---
 
@@ -207,6 +239,14 @@ Use Notion as an optional shared scratchpad or note database.
 - Create a dedicated internal integration in Notion and store the token in `NOTION_API_KEY`.
 - Share the target page/database explicitly with that integration.
 - Start with one scratchpad page and one notes database rather than a workspace-wide token + broad allowlist.
+
+### 21. List Tools (`list_tools`)
+Runtime discovery of all registered tools. Returns every tool's name, description, and full JSON parameter schema.
+- **Purpose**: Enables MetaSKILLs and other orchestration flows to introspect available capabilities at runtime without hardcoding tool names.
+- **Parameters**:
+  - `filter` (optional): substring match against tool names (case-insensitive). Omitting `filter` returns all tools.
+- **Output**: JSON array of objects with `name` (string), `description` (string), and `parameterSchema` (JSON object, the tool's input schema).
+- **Usage**: Called programmatically by MetaSKILL `kind: fan_out` steps to validate tool availability, or directly by the agent when reasoning about which tools to use.
 
 ---
 

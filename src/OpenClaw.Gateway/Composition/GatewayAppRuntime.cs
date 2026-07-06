@@ -14,6 +14,7 @@ using OpenClaw.Core.Sessions;
 using OpenClaw.Core.Skills;
 using OpenClaw.Gateway;
 using OpenClaw.Gateway.Extensions;
+using OpenClaw.Gateway.Tools;
 using OpenClaw.Payments.Core;
 
 namespace OpenClaw.Gateway.Composition;
@@ -57,6 +58,9 @@ internal sealed class GatewayAppRuntime
     public NativeDynamicPluginHost? NativeDynamicPluginHost { get; init; }
     public FirstPartyWhatsAppWorkerHost? WhatsAppWorkerHost { get; init; }
     public required ChannelAuthEventStore ChannelAuthEvents { get; init; }
+
+    /// <summary>Runtime that validates emit_artifact calls against skill artifact contracts.</summary>
+    public required SkillArtifactRuntime ArtifactRuntime { get; init; }
 
     /// <summary>Names of all registered tools (built-in + native plugins + bridge plugins).</summary>
     public required FrozenSet<string> RegisteredToolNames { get; init; }

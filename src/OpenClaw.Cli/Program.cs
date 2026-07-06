@@ -35,7 +35,11 @@ internal static class Program
                 "maintenance" => await MaintenanceAsync(rest),
                 "payment" => await PaymentCommands.RunAsync(rest),
                 "external" => await ExternalCliCommands.RunAsync(rest),
+                "routing" => await RoutingCommands.RunAsync(rest),
+                "memory" => await MemoryCommands.RunAsync(rest),
                 "test" => await TestingCommands.RunAsync(rest),
+                "harness" => await HarnessCommands.RunAsync(rest),
+                "regression" => await HarnessCommands.RunRegressionAliasAsync(rest, Console.Out, Console.Error),
                 "init" => InitCommand.Run(rest),
                 "migrate" => await MigrateAsync(rest),
                 "pulse" => await PulseAsync(rest),
@@ -47,6 +51,7 @@ internal static class Program
                 "admin" => await AdminAsync(rest),
                 "compatibility" or "compat" => CompatibilityCommands.Run(rest),
                 "plugins" => await PluginCommands.RunAsync(rest),
+                "skill" => await SkillKitCommands.RunAsync(rest),
                 "skills" => await SkillCommands.RunAsync(rest),
                 "clawhub" => await ClawHubCommand.RunAsync(rest),
                 "version" or "--version" or "-v" => PrintVersion(),
@@ -92,7 +97,7 @@ internal static class Program
               openclaw tui [options]
               openclaw insights [options]
               openclaw setup [options]
-              openclaw setup <launch|service|status|verify|channel> [options]
+              openclaw setup <launch|service|status|verify|channel|provider|tailscale> [options]
               openclaw upgrade <check|rollback> [options]
               openclaw init [options]
               openclaw migrate [options]
@@ -103,14 +108,32 @@ internal static class Program
               openclaw maintenance <scan|fix> [options]
               openclaw payment <setup|funding list|virtual-card issue|execute|status> [options]
               openclaw external <list|status|commands|preview|execute> [options]
+              openclaw routing <onboard|configure|providers|status|diagnostics> [options]
+              openclaw memory fractal <status|search|open|export|recent|handoff create|validate|index refresh> [options]
               openclaw test <init|run|report|gates> [options]
+              openclaw harness <test|regression|map|state> [options]
+              openclaw regression test [options]
               openclaw eval <run|compare> [options]
               openclaw accounts <list|add|remove|probe> [options]
               openclaw backends <list|probe|run|session send> [options]
               openclaw admin <posture|incident export|trajectory export|approvals simulate> [options]
               openclaw compatibility <catalog> [options]
               openclaw plugins <install|remove|list|search> [options]
-              openclaw skills <inspect|install|list> [options]
+              openclaw skill <new|critique|generate|validate|run|package|list> [options]
+              openclaw skills <inspect|install|list|catalog|create|proposals|meta-runs> [options]
+              openclaw skills catalog [--workdir <path> | --managed] [--kind <all|meta>] [--json]
+              openclaw skills create <name> [--kind <standard|meta>] [--description <text>] [--proposal-draft] [--workdir <path> | --managed] [--json] [--force]
+              openclaw skills proposals <session-id> [--run <run-id>] [--storage <path>] [--json]
+              openclaw skills proposals show <session-id> --proposal <id> [--storage <path>] [--json]
+              openclaw skills meta-runs <session-id> [--storage <path>] [--limit <count>] [--run <run-id>] [--verbose] [--json]
+              openclaw skills meta-runs replay <session-id> --run <run-id> [--storage <path>] [--json]
+              openclaw skills meta-runs reconstruct <session-id> --run <run-id> [--storage <path>] [--json]
+              openclaw skills meta-runs proposals <session-id> [--run <run-id>] [--storage <path>] [--json]
+              openclaw skills meta-runs proposals show <session-id> --proposal <id> [--storage <path>] [--json]
+              openclaw skills meta-runs proposals accept <session-id> --proposal <id> [--storage <path>] [--json]
+              openclaw skills meta-runs proposals dismiss <session-id> --proposal <id> [--reason <text>] [--storage <path>] [--json]
+              openclaw skills meta-runs proposals rollback <session-id> --proposal <id> [--reason <text>] [--storage <path>] [--json]
+              openclaw skills meta-runs proposals change <session-id> --proposal <id> --to <accept|dismiss> [--reason <text>] [--storage <path>] [--json]
               openclaw clawhub [wrapper options] [--] <clawhub args...>
 
             Common options:
@@ -146,11 +169,14 @@ internal static class Program
               openclaw tui
               openclaw insights
               openclaw setup
+              openclaw setup tailscale serve
+              openclaw setup provider aperture --config ~/.openclaw/config/openclaw.settings.json --endpoint https://YOUR_APERTURE_ENDPOINT --model YOUR_APERTURE_MODEL_ROUTE --auth-mode bearer --env-var OPENCLAW_APERTURE_TOKEN
               openclaw upgrade check
               openclaw upgrade check --config ~/.openclaw/config/openclaw.settings.json --offline
               openclaw upgrade rollback --config ~/.openclaw/config/openclaw.settings.json --offline
               openclaw setup --non-interactive --profile local --workspace ./workspace --provider openai --model gpt-4o --api-key env:MODEL_PROVIDER_KEY
               openclaw setup --non-interactive --profile local --workspace ./workspace --provider ollama --model llama3.2 --model-preset ollama-general
+              openclaw setup provider aperture --endpoint https://YOUR_APERTURE_ENDPOINT --model YOUR_APERTURE_MODEL_ROUTE --auth-mode tailnet-identity
               openclaw setup verify --config ~/.openclaw/config/openclaw.settings.json
               openclaw setup launch --config ~/.openclaw/config/openclaw.settings.json --with-companion --open-browser
               openclaw setup service --config ~/.openclaw/config/openclaw.settings.json --platform all
@@ -162,8 +188,15 @@ internal static class Program
               openclaw pulse status
               openclaw pulse run --text "Check for urgent follow-ups"
               openclaw external list
+              openclaw routing --help
+              openclaw memory fractal status
+              openclaw memory fractal search "context bloat"
               openclaw test run
               openclaw test gates
+              openclaw harness test
+              openclaw harness test --category security --strict
+              openclaw harness map
+              openclaw harness state list
               openclaw models list
               openclaw models presets
               openclaw models doctor
@@ -180,6 +213,9 @@ internal static class Program
               openclaw admin approvals simulate --tool shell --args "{\"command\":\"pwd\"}"
               openclaw admin incident export
               openclaw compatibility catalog --status compatible
+              openclaw skill new "Community Research Insight Extractor" --category research
+              openclaw skill validate community.research_insight
+              openclaw skill run community.research_insight --input transcript.md --dry-run
 
             Gateway direct-start fallback:
               dotnet run --project src/OpenClaw.Gateway -c Release -- --quickstart
@@ -194,6 +230,9 @@ internal static class Program
               openclaw plugins search <query>             Search npm for plugins
 
             Skill management:
+              openclaw skill new "Community Research Insight Extractor" --category research
+              openclaw skill validate community.research_insight
+              openclaw skill package community.research_insight
               openclaw skills inspect ./my-skill          Inspect a local skill package
               openclaw skills install ./my-skill --dry-run
               openclaw skills install ./my-skill --managed
@@ -276,6 +315,11 @@ internal static class Program
               openclaw models list [--url <url>] [--token <token>]
               openclaw models doctor [--url <url>] [--token <token>]
               openclaw models presets
+              openclaw models packages
+              openclaw models status [package] [--models-root <path>]
+              openclaw models install <package> --accept-license [--path <model>] [--mmproj-path <gguf>] [--draft-path <model>] [--download-url <url>] [--token <hf-token>] [--models-root <path>] [--no-optional-files]
+              openclaw models verify <package> [--models-root <path>]
+              openclaw models remove <package> [--models-root <path>]
             """);
     }
 
@@ -339,7 +383,7 @@ internal static class Program
             openclaw setup
 
             Usage:
-              openclaw setup [--profile <local|public>] [--non-interactive]
+              openclaw setup [--profile <local|public|tailscale-serve>] [--non-interactive]
                               [--config <path>] [--workspace <path>] [--provider <id>] [--model <id>] [--model-preset <id>] [--api-key <secret-or-envref>]
                               [--bind <address>] [--port <n>] [--auth-token <token>]
                               [--docker-image <image>] [--opensandbox-endpoint <url>] [--ssh-host <host>] [--ssh-user <user>] [--ssh-key <path>]
@@ -348,6 +392,7 @@ internal static class Program
               openclaw setup status [--config <path>]
               openclaw setup verify [--config <path>] [--offline] [--require-provider] [--json]
               openclaw setup channel <telegram|slack|discord|teams|whatsapp> [--config <path>] [--non-interactive] [...]
+              openclaw setup tailscale serve [--config <path>] [--local-url <url>] [--non-interactive]
 
             Notes:
               - Prefer 'openclaw start' for the one-command local path.
@@ -359,6 +404,7 @@ internal static class Program
               - 'openclaw setup status' summarizes bind/auth posture and deploy artifact presence.
               - 'openclaw setup verify' runs the first-run verification checks without launching the gateway.
               - 'openclaw setup channel ...' updates an existing external config with channel-specific settings.
+              - 'openclaw setup tailscale serve' prints private tailnet Serve instructions without enabling public bind or changing providers.
               - Use --non-interactive for automation or CI.
               - Writes an external JSON config file plus an adjacent env example.
               - Prints gateway, companion, doctor, and admin posture commands.
@@ -912,6 +958,9 @@ internal static class Program
                 Console.WriteLine($"- {preset.Id} | {preset.Label} | tags={string.Join(",", preset.Tags)} | {preset.Description}");
             return 0;
         }
+
+        if (subcommand is "packages" or "status" or "install" or "verify" or "remove")
+            return await ModelCommands.RunLocalPackageCommandAsync(subcommand, args.Skip(1).ToArray());
 
         var baseUrl = parsed.GetOption("--url") ?? Environment.GetEnvironmentVariable(EnvBaseUrl) ?? DefaultBaseUrl;
         var token = ResolveAuthToken(parsed, Console.Error);

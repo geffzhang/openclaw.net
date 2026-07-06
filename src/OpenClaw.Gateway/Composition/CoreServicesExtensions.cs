@@ -5,17 +5,23 @@ using Microsoft.Extensions.Hosting;
 using OpenClaw.Channels;
 using OpenClaw.Agent;
 using OpenClaw.Agent.Execution;
+using OpenClaw.Agent.Goal;
+using OpenClaw.Agent.Memory;
 using OpenClaw.Agent.Plugins;
+using OpenClaw.Agent.Routing;
+using OpenClaw.Agent.Tools;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.ExternalCli;
 using OpenClaw.Core.Features;
 using OpenClaw.Core.Governance;
 using OpenClaw.Core.Memory;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Models.Goal;
 using OpenClaw.Core.Observability;
 using OpenClaw.Core.Pipeline;
 using OpenClaw.Core.Plugins;
 using OpenClaw.Core.Security;
+using OpenClaw.Core.Services;
 using OpenClaw.Core.Sessions;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Extensions;
@@ -23,11 +29,15 @@ using OpenClaw.Gateway.Mcp;
 using OpenClaw.Gateway.Models;
 using OpenClaw.Gateway.Pipeline;
 using OpenClaw.Gateway.PromptCaching;
+using OpenClaw.Gateway.Routing;
+using OpenClaw.Gateway.Workflows;
 using OpenClaw.Core.Validation;
+using OpenClaw.Core.Loops;
 using OpenClaw.PluginKit;
 using OpenClaw.Payments.Abstractions;
 using OpenClaw.Payments.Core;
 using OpenClaw.Payments.StripeLink;
+using OpenClaw.Routing.Onnx;
 using TickerQ.DependencyInjection;
 
 namespace OpenClaw.Gateway.Composition;
@@ -95,6 +105,12 @@ internal static class CoreServicesExtensions
             sp.GetRequiredService<IRedactionPipeline>(),
             ResolveStartupCancellationToken(sp),
             ResolveBlockedPluginIds(sp)));
+        services.AddSingleton<IStructuredMemoryProvider>(sp =>
+            new FractalMemoryMcpProvider(
+                config,
+                startup.WorkspacePath,
+                sp.GetRequiredService<ILogger<FractalMemoryMcpProvider>>()));
+        services.AddSingleton<ContextBudgetPlanner>();
         services.AddSingleton<ISessionAdminStore>(sp =>
         {
             var memory = sp.GetRequiredService<IMemoryStore>();
@@ -108,6 +124,16 @@ internal static class CoreServicesExtensions
         });
         AddFeatureStores(services, config);
         services.AddSingleton<ProviderUsageTracker>();
+        services.AddSingleton(sp => new TurnTokenUsageAuditLog(
+            Path.Combine(Path.GetFullPath(config.Memory.StoragePath), "audit", "turn-token-usage.jsonl"),
+            sp.GetRequiredService<ILogger<TurnTokenUsageAuditLog>>(),
+            auditQueueCapacity: 4096));
+        services.AddSingleton<ITurnTokenUsageObserver>(sp =>
+            new CompositeTurnTokenUsageObserver([
+                new ProviderUsageTurnTokenUsageObserver(sp.GetRequiredService<ProviderUsageTracker>()),
+                sp.GetRequiredService<TurnTokenUsageAuditLog>()
+            ],
+            sp.GetRequiredService<ILogger<CompositeTurnTokenUsageObserver>>()));
         services.AddSingleton<ToolUsageTracker>();
         services.AddSingleton<ProviderSmokeRegistry>();
         services.AddSingleton<StartupNoticeCollector>();
@@ -120,6 +146,20 @@ internal static class CoreServicesExtensions
         services.AddSingleton<ConfiguredModelProfileRegistry>();
         services.AddSingleton<IModelProfileRegistry>(sp => sp.GetRequiredService<ConfiguredModelProfileRegistry>());
         services.AddSingleton<IModelSelectionPolicy, DefaultModelSelectionPolicy>();
+        services.AddSingleton(sp =>
+            DynamicTurnRoutingConfigNormalizer.Normalize(
+                config.DynamicTurnRouting,
+                new OpenSquillaBundleLoader()));
+        services.AddSingleton<ITurnRoutingPolicy>(sp =>
+        {
+            var resolvedRoutingConfig = sp.GetRequiredService<ResolvedDynamicTurnRoutingConfig>();
+            if (!resolvedRoutingConfig.Enabled)
+                return NoopTurnRoutingPolicy.Instance;
+
+            return new OnnxTurnRoutingPolicy(
+                resolvedRoutingConfig,
+                sp.GetRequiredService<ILogger<OnnxTurnRoutingPolicy>>());
+        });
         services.AddSingleton<ModelEvaluationRunner>();
         services.AddSingleton<PromptCacheTraceWriter>();
         services.AddSingleton<PromptCacheCoordinator>();
@@ -137,6 +177,8 @@ internal static class CoreServicesExtensions
         services.AddSingleton<GeminiAudioTranscriptionProvider>();
         services.AddSingleton<IAudioTranscriptionProvider>(sp => sp.GetRequiredService<GeminiAudioTranscriptionProvider>());
         services.AddSingleton<AudioTranscriptionService>();
+        services.AddSingleton<VideoFrameExtractionService>();
+        services.AddSingleton<IVideoFrameExtractionService>(sp => sp.GetRequiredService<VideoFrameExtractionService>());
         services.AddSingleton<GeminiLiveProxyService>();
         services.AddSingleton<ILiveSessionProvider>(sp => sp.GetRequiredService<GeminiLiveProxyService>());
         services.AddSingleton<GeminiTextToSpeechProvider>();
@@ -180,10 +222,42 @@ internal static class CoreServicesExtensions
         services.AddHostedService(sp => sp.GetRequiredService<RuntimePulseService>());
         services.AddTickerQ();
         services.AddSingleton<CronSchedulerTickerFunction>();
+
+        // Loop scheduling
+        services.AddSingleton<ClawLoopScheduler>();
+        services.AddSingleton<ILoopControlService>(sp => sp.GetRequiredService<ClawLoopScheduler>());
+        services.AddSingleton<LoopTerminationDetector>();
+        services.AddSingleton<IAgentLoopDispatcher, GatewayAgentLoopDispatcher>();
+        services.AddSingleton<AgentLoopJob>();
         services.AddSingleton<AutomationRunCoordinator>();
         services.AddSingleton<IAutomationRunDispatcher>(sp => sp.GetRequiredService<AutomationRunCoordinator>());
         services.AddSingleton<GatewayAutomationService>();
         services.AddSingleton<LearningService>();
+        services.AddSingleton<HarnessContractService>();
+        services.AddSingleton<EvidenceBundleService>();
+        services.AddSingleton<GovernanceLedgerService>();
+
+        // Goal system
+        services.AddSingleton<IGoalService>(sp =>
+        {
+            var startupContext = sp.GetRequiredService<GatewayStartupContext>();
+            var logger = sp.GetRequiredService<ILogger<InMemoryGoalService>>();
+            var storagePath = startupContext.Config.Memory.StoragePath;
+            var historyPath = !string.IsNullOrEmpty(storagePath)
+                ? Path.Combine(Path.GetFullPath(storagePath), "goal-history.jsonl")
+                : null;
+            return new InMemoryGoalService(logger, historyPath);
+        });
+        services.AddSingleton<ITool, GetGoalTool>();
+        services.AddSingleton<ITool, CreateGoalTool>();
+        services.AddSingleton<ITool, UpdateGoalTool>();
+        services.AddSingleton<ITool, LoopControlTool>();
+
+        services.AddSingleton<SharedHarnessStateService>();
+        services.AddSingleton<CodebaseHarnessMapService>();
+        services.AddSingleton<PlanExecuteVerifyService>();
+        services.AddSingleton<IPlanExecuteVerifyOrchestrator>(sp => sp.GetRequiredService<PlanExecuteVerifyService>());
+        services.AddSingleton<AgentWorkflowRegistry>();
         services.AddSingleton<ICronJobSource, GatewayCronJobSource>();
         services.AddSingleton<ActorRateLimitService>(sp =>
             new ActorRateLimitService(
@@ -205,6 +279,7 @@ internal static class CoreServicesExtensions
         services.AddSingleton<IMemoryRetentionCoordinator>(sp => sp.GetRequiredService<MemoryRetentionSweeperService>());
         services.AddHostedService(sp => sp.GetRequiredService<MemoryRetentionSweeperService>());
         services.AddSingleton<MessagePipeline>();
+        services.AddSingleton<Background.BackgroundExecutionLimiter>();
         services.AddSingleton(sp =>
             new CronScheduler(
                 sp.GetRequiredService<ICronJobSource>(),
@@ -231,6 +306,15 @@ internal static class CoreServicesExtensions
 
     private static void AddFeatureStores(IServiceCollection services, GatewayConfig config)
     {
+        services.AddSingleton<FileHarnessContractStore>(_ => new FileHarnessContractStore(config.Memory.StoragePath));
+        services.AddSingleton<IHarnessContractStore>(sp => sp.GetRequiredService<FileHarnessContractStore>());
+        services.AddSingleton<FileEvidenceBundleStore>(_ => new FileEvidenceBundleStore(config.Memory.StoragePath));
+        services.AddSingleton<IEvidenceBundleStore>(sp => sp.GetRequiredService<FileEvidenceBundleStore>());
+        services.AddSingleton<FileGovernanceLedgerStore>(_ => new FileGovernanceLedgerStore(config.Memory.StoragePath));
+        services.AddSingleton<IGovernanceLedgerStore>(sp => sp.GetRequiredService<FileGovernanceLedgerStore>());
+        services.AddSingleton<FileSharedHarnessStateStore>(_ => new FileSharedHarnessStateStore(config.Memory.StoragePath));
+        services.AddSingleton<ISharedHarnessStateStore>(sp => sp.GetRequiredService<FileSharedHarnessStateStore>());
+
         if (string.Equals(config.Memory.Provider, "sqlite", StringComparison.OrdinalIgnoreCase))
         {
             services.AddSingleton<SqliteFeatureStore>(_ => new SqliteFeatureStore(ResolveSqliteDbPath(config)));

@@ -6,14 +6,33 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
-using OpenClaw.Agent.Tools;
+using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
+using OpenClaw.Protocols.Browser.Tools;
 
 namespace OpenClaw.Tests;
 
 [Collection(EnvironmentVariableCollection.Name)]
 public class BrowserToolTests
 {
+    [Fact]
+    public async Task BrowserTool_LocalExecutionPolicy_ReportsBrowserBackendFailure()
+    {
+        await using var browser = new BrowserTool(
+            new ToolingConfig { EnableBrowserTool = true },
+            localExecutionSupported: false);
+
+        var policy = Assert.IsAssignableFrom<IToolLocalExecutionPolicy>(browser);
+        Assert.False(policy.LocalExecutionSupported);
+        Assert.Equal(ToolFailureCodes.BrowserBackendMissing, policy.LocalExecutionUnavailableFailureCode);
+        Assert.Equal(
+            "Error: Browser tool requires a configured execution backend or sandbox in this runtime. Local Playwright execution is unavailable.",
+            policy.LocalExecutionUnavailableMessage);
+
+        var result = await browser.ExecuteAsync("""{"action":"get_text"}""", TestContext.Current.CancellationToken);
+        Assert.Equal(policy.LocalExecutionUnavailableMessage, result);
+    }
+
     [Fact]
     public async Task BrowserTool_CanNavigateAndGetText()
     {
@@ -45,15 +64,15 @@ public class BrowserToolTests
             await using var browser = new BrowserTool(config);
 
             var gotoArgs = $$"""{"action": "goto", "url": "{{pageServer.Url}}"}""";
-            var gotoRes = await browser.ExecuteAsync(gotoArgs, CancellationToken.None);
+            var gotoRes = await browser.ExecuteAsync(gotoArgs, TestContext.Current.CancellationToken);
             Assert.Contains("Navigated to", gotoRes);
 
             var getTextArgs = "{\"action\": \"get_text\", \"selector\": \"h1\"}";
-            var textRes = await browser.ExecuteAsync(getTextArgs, CancellationToken.None);
+            var textRes = await browser.ExecuteAsync(getTextArgs, TestContext.Current.CancellationToken);
             Assert.Contains("OpenClaw Browser Tool Test", textRes);
 
             var evalArgs = "{\"action\": \"evaluate\", \"script\": \"Math.max(1, 5)\"}";
-            var evalRes = await browser.ExecuteAsync(evalArgs, CancellationToken.None);
+            var evalRes = await browser.ExecuteAsync(evalArgs, TestContext.Current.CancellationToken);
             Assert.Equal("5", evalRes);
         }
         finally

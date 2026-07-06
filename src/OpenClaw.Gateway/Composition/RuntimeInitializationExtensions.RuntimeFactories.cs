@@ -17,6 +17,8 @@ using OpenClaw.Gateway.Extensions;
 using OpenClaw.Gateway.Models;
 using OpenClaw.Gateway.Tools;
 using OpenClaw.Plugins.Payment;
+using OpenClaw.Protocols.Browser.Tools;
+using OpenClaw.Protocols.Mqtt.Integrations;
 
 namespace OpenClaw.Gateway.Composition;
 
@@ -35,7 +37,8 @@ internal static partial class RuntimeInitializationExtensions
         string orchestratorId,
         IReadOnlyList<ITool> tools,
         IReadOnlyList<SkillDefinition> skills,
-        CronScheduler? cronScheduler)
+        CronScheduler? cronScheduler,
+        SkillArtifactRuntime artifactRuntime)
     {
         var operations = new RuntimeOperationsState
         {
@@ -96,6 +99,7 @@ internal static partial class RuntimeInitializationExtensions
             NativeDynamicPluginHost = pluginComposition.NativeDynamicPluginHost,
             WhatsAppWorkerHost = channelComposition.WhatsAppWorkerHost,
             RegisteredToolNames = tools.Select(t => t.Name).ToFrozenSet(StringComparer.Ordinal),
+            ArtifactRuntime = artifactRuntime,
             ChannelAuthEvents = WireChannelAuthEvents(channelComposition.ChannelAdapters)
         };
     }
@@ -104,7 +108,8 @@ internal static partial class RuntimeInitializationExtensions
         GatewayConfig config,
         RuntimeServices services,
         string? workspacePath,
-        GatewayRuntimeState runtimeState)
+        GatewayRuntimeState runtimeState,
+        SkillArtifactRuntime artifactRuntime)
     {
         var projectId = config.Memory.ProjectId
             ?? Environment.GetEnvironmentVariable("OPENCLAW_PROJECT")
@@ -134,6 +139,11 @@ internal static partial class RuntimeInitializationExtensions
             new A2UiPushTool(services.CanvasBroker, config),
             new A2UiResetTool(services.CanvasBroker, config),
             new A2UiEvalTool(services.CanvasBroker, config),
+            new A2UiCreateSurfaceTool(services.CanvasBroker, config),
+            new A2UiUpdateComponentsTool(services.CanvasBroker, config),
+            new A2UiUpdateDataModelTool(services.CanvasBroker, config),
+            new A2UiDeleteSurfaceTool(services.CanvasBroker, config),
+            new A2UiSyncUiToDataTool(services.CanvasBroker, config),
 
             new EditFileTool(config.Tooling),
             new ApplyPatchTool(config.Tooling),
@@ -152,6 +162,19 @@ internal static partial class RuntimeInitializationExtensions
             new MemoryGetTool(services.MemoryStore),
             new ProfileWriteTool(services.UserProfileStore),
             new SessionsYieldTool(services.SessionManager, services.Pipeline, services.MemoryStore),
+
+            new EmitTextTool(),
+            new MetaSkillFillSlotsTool(),
+            new MetaSkillAssembleTool(),
+            new MetaSkillLintRunTool(),
+            new MetaSkillSmokeRunTool(),
+            new MetaSkillRuntimeE2ERunTool(),
+            new MetaSkillPersistProposalTool(),
+
+            // Goal system
+            new GetGoalTool(services.GoalService),
+            new CreateGoalTool(services.GoalService),
+            new UpdateGoalTool(services.GoalService),
         };
 
         if (browserAvailability.Registered)
@@ -164,11 +187,30 @@ internal static partial class RuntimeInitializationExtensions
                 services.ExternalCliAudit,
                 services.ExternalCliEvents));
 
+        if (config.Memory.Fractal.Enabled)
+        {
+            var structuredMemoryProvider = services.StructuredMemoryProviderFactory();
+            tools.Add(new FractalMemorySearchTool(structuredMemoryProvider));
+            tools.Add(new FractalMemoryOpenTool(structuredMemoryProvider, config.Memory.Fractal));
+            tools.Add(new FractalMemoryRecentTool(structuredMemoryProvider));
+            tools.Add(new FractalMemoryExportTool(structuredMemoryProvider, config.Memory.Fractal));
+            tools.Add(new FractalMemoryValidateTool(structuredMemoryProvider));
+
+            if (config.Memory.Fractal.AllowWrites)
+            {
+                tools.Add(new FractalMemoryHandoffCreateTool(structuredMemoryProvider, config.Memory.Fractal));
+                tools.Add(new FractalMemoryIndexRefreshTool(structuredMemoryProvider, config.Memory.Fractal));
+            }
+        }
+
         if (config.Payments.Enabled && config.Payments.ToolEnabled)
             tools.Add(PaymentPluginRegistration.CreateTool(services.PaymentRuntime, config.Payments.Provider, config.Payments.Environment));
 
         if (string.Equals(Environment.GetEnvironmentVariable("OPENCLAW_ENABLE_STREAMING_SMOKE_TOOL"), "1", StringComparison.Ordinal))
             tools.Add(new StreamingSmokeEchoTool());
+
+        if (config.Tooling.EnableEmitArtifact)
+            tools.Add(new EmitArtifactTool(services.MediaCache, services.WebSocketChannel, config, artifactRuntime));
 
         return tools;
     }
@@ -263,7 +305,8 @@ internal static partial class RuntimeInitializationExtensions
         IReadOnlyList<string> pluginSkillDirs,
         bool requireToolApproval,
         IReadOnlyList<string> approvalRequiredTools,
-        IToolSandbox? toolSandbox)
+        IToolSandbox? toolSandbox,
+        IReadOnlyList<IToolResultInterceptor>? interceptors = null)
     {
         var factory = AgentRuntimeFactorySelector.Select(
             services.GetServices<IAgentRuntimeFactory>(),
@@ -289,14 +332,17 @@ internal static partial class RuntimeInitializationExtensions
             Hooks = hooks,
             RequireToolApproval = requireToolApproval,
             ApprovalRequiredTools = approvalRequiredTools,
+            TurnTokenUsageObserver = services.GetService<ITurnTokenUsageObserver>(),
             ToolSandbox = toolSandbox,
             ToolGovernance = services.GetRequiredService<IToolGovernanceService>(),
+            PlanExecuteVerify = services.GetService<IPlanExecuteVerifyOrchestrator>(),
             ToolUsageTracker = services.GetRequiredService<ToolUsageTracker>(),
             ToolAuditLog = services.GetRequiredService<ToolAuditLog>(),
             IsContractTokenBudgetExceeded = contractGovernance.IsTokenBudgetExceeded,
             IsContractRuntimeBudgetExceeded = contractGovernance.IsRuntimeBudgetExceeded,
             RecordContractTurnUsage = contractGovernance.RecordTurnUsage,
-            AppendContractSnapshot = (session, status) => contractGovernance.AppendSnapshot(session, status)
+            AppendContractSnapshot = (session, status) => contractGovernance.AppendSnapshot(session, status),
+            Interceptors = interceptors
         });
     }
 

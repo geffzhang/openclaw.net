@@ -45,7 +45,7 @@ public sealed class OpenClawToolExecutorTests
             },
             isStreaming: false,
             approvalCallback: null,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Contains("requires approval", result.ResultText, StringComparison.OrdinalIgnoreCase);
         await tool.DidNotReceiveWithAnyArgs().ExecuteAsync(default!, default);
@@ -65,7 +65,7 @@ public sealed class OpenClawToolExecutorTests
             CreateTurnContext(),
             isStreaming: false,
             approvalCallback: null,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal("local-result", result.ResultText);
         Assert.Equal(1, tool.LocalExecutionCount);
@@ -110,7 +110,7 @@ public sealed class OpenClawToolExecutorTests
             CreateTurnContext(),
             isStreaming: false,
             approvalCallback: null,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal("formatted:sandbox-result", result.ResultText);
         Assert.Equal(0, tool.LocalExecutionCount);
@@ -142,7 +142,7 @@ public sealed class OpenClawToolExecutorTests
             CreateTurnContext(),
             isStreaming: false,
             approvalCallback: null,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal("local-result", result.ResultText);
         Assert.Equal(1, tool.LocalExecutionCount);
@@ -165,7 +165,7 @@ public sealed class OpenClawToolExecutorTests
             CreateTurnContext(),
             isStreaming: false,
             approvalCallback: null,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Contains("requires sandboxing", result.ResultText, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(0, tool.LocalExecutionCount);
@@ -208,7 +208,7 @@ public sealed class OpenClawToolExecutorTests
             CreateTurnContext(),
             isStreaming: false,
             approvalCallback: null,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal("local-result", result.ResultText);
         Assert.Equal(1, tool.LocalExecutionCount);
@@ -250,7 +250,7 @@ public sealed class OpenClawToolExecutorTests
             CreateTurnContext(),
             isStreaming: false,
             approvalCallback: null,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Contains("denied by hook", result.ResultText, StringComparison.OrdinalIgnoreCase);
         await sandbox.DidNotReceiveWithAnyArgs().ExecuteAsync(default!, default);
@@ -270,7 +270,7 @@ public sealed class OpenClawToolExecutorTests
             CreateTurnContext(),
             isStreaming: false,
             approvalCallback: null,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(ToolResultStatuses.Blocked, result.ResultStatus);
         Assert.Equal(ToolFailureCodes.OperatorAuthRequired, result.FailureCode);
@@ -294,7 +294,7 @@ public sealed class OpenClawToolExecutorTests
             CreateTurnContext(),
             isStreaming: false,
             approvalCallback: null,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(ToolResultStatuses.Blocked, result.ResultStatus);
         Assert.Equal(ToolFailureCodes.RuntimeCapabilityUnavailable, result.FailureCode);
@@ -303,11 +303,184 @@ public sealed class OpenClawToolExecutorTests
         Assert.Contains("Configure the required execution backend or sandbox", result.NextStep ?? string.Empty, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_LocalExecutionPolicyFailure_UsesStructuredFailureCode()
+    {
+        var tool = new LocalExecutionDisabledTool();
+        var executor = CreateExecutor([tool]);
+
+        var result = await executor.ExecuteAsync(
+            tool.Name,
+            """{"action":"restricted"}""",
+            callId: null,
+            CreateSession(),
+            CreateTurnContext(),
+            isStreaming: false,
+            approvalCallback: null,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(ToolResultStatuses.Blocked, result.ResultStatus);
+        Assert.Equal(ToolFailureCodes.RuntimeCapabilityUnavailable, result.FailureCode);
+        Assert.Equal(ToolFailureCodes.RuntimeCapabilityUnavailable, result.Invocation.FailureCode);
+        Assert.Equal(tool.LocalExecutionUnavailableMessage, result.ResultText);
+        Assert.Contains("Configure the required execution backend or sandbox", result.NextStep ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WhenToolFails_PassesFailureContextToInterceptors()
+    {
+        var tool = new ThrowingTool("Execution backend 'docker' is not configured.");
+        var interceptor = new RecordingInterceptor();
+        var executor = CreateExecutor([tool], interceptors: [interceptor]);
+
+        var result = await executor.ExecuteAsync(
+            "auth_bound",
+            """{"action":"restricted"}""",
+            callId: null,
+            CreateSession(),
+            CreateTurnContext(),
+            isStreaming: false,
+            approvalCallback: null,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(ToolResultStatuses.Blocked, result.ResultStatus);
+        Assert.NotNull(interceptor.Context);
+        Assert.True(interceptor.Context.Value.IsError);
+        Assert.Equal(1, interceptor.Context.Value.ExitCode);
+        Assert.Contains("execution backend", interceptor.Context.Value.RawOutput, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_RouteToolsDisabled_BlocksDirectToolExecution()
+    {
+        var tool = new SandboxCapableEchoTool(ToolSandboxMode.Prefer, "local-result");
+        var executor = CreateExecutor([tool]);
+        var session = CreateSession();
+        session.RouteToolsDisabled = true;
+
+        var result = await executor.ExecuteAsync(
+            tool.Name,
+            """{"value":"hi"}""",
+            callId: null,
+            session,
+            CreateTurnContext(),
+            isStreaming: false,
+            approvalCallback: null,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(ToolResultStatuses.Blocked, result.ResultStatus);
+        Assert.Equal(ToolFailureCodes.PresetBlocked, result.FailureCode);
+        Assert.Contains("disabled for this routed turn", result.ResultText, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, tool.LocalExecutionCount);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_MetaInvokeWithRuntimeExecutor_UsesRuntimeCallback()
+    {
+        var tool = new RecordingTool("meta_invoke", "tool-fallback");
+        var callbackCalls = 0;
+
+        var executor = new OpenClawToolExecutor(
+            [tool],
+            toolTimeoutSeconds: 5,
+            requireToolApproval: false,
+            approvalRequiredTools: [],
+            hooks: [],
+            metrics: new RuntimeMetrics(),
+            logger: NullLogger.Instance,
+            metaInvokeExecutor: (_, skill, input, _) =>
+            {
+                callbackCalls++;
+                return Task.FromResult($"meta:{skill}:{input}");
+            });
+
+        var result = await executor.ExecuteAsync(
+            "meta_invoke",
+            """{"skill":"meta-research","input":"hello"}""",
+            callId: null,
+            CreateSession(),
+            CreateTurnContext(),
+            isStreaming: false,
+            approvalCallback: null,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("meta:meta-research:hello", result.ResultText);
+        Assert.Equal(1, callbackCalls);
+        Assert.Equal(0, tool.CallCount);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_MetaInvokeWithInvalidArguments_FallsBackToToolImplementation()
+    {
+        var tool = new RecordingTool("meta_invoke", "tool-fallback");
+        var callbackCalls = 0;
+
+        var executor = new OpenClawToolExecutor(
+            [tool],
+            toolTimeoutSeconds: 5,
+            requireToolApproval: false,
+            approvalRequiredTools: [],
+            hooks: [],
+            metrics: new RuntimeMetrics(),
+            logger: NullLogger.Instance,
+            metaInvokeExecutor: (_, _, _, _) =>
+            {
+                callbackCalls++;
+                return Task.FromResult("meta-callback");
+            });
+
+        var result = await executor.ExecuteAsync(
+            "meta_invoke",
+            """{"input":"hello"}""",
+            callId: null,
+            CreateSession(),
+            CreateTurnContext(),
+            isStreaming: false,
+            approvalCallback: null,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("tool-fallback", result.ResultText);
+        Assert.Equal(0, callbackCalls);
+        Assert.Equal(1, tool.CallCount);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_MetaInvokeWhenRuntimePolicyDisablesMeta_BlocksInvocation()
+    {
+        var tool = new RecordingTool("meta_invoke", "tool-fallback");
+        var executor = new OpenClawToolExecutor(
+            [tool],
+            toolTimeoutSeconds: 5,
+            requireToolApproval: false,
+            approvalRequiredTools: [],
+            hooks: [],
+            metrics: new RuntimeMetrics(),
+            logger: NullLogger.Instance,
+            metaInvokeExecutor: (_, _, _, _) =>
+                Task.FromResult("Error: Meta skill invocation is disabled by runtime policy."));
+
+        var result = await executor.ExecuteAsync(
+            "meta_invoke",
+            """{"skill":"meta-research","input":"hello"}""",
+            callId: null,
+            CreateSession(),
+            CreateTurnContext(),
+            isStreaming: false,
+            approvalCallback: null,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(ToolResultStatuses.Blocked, result.ResultStatus);
+        Assert.Equal(ToolFailureCodes.RuntimeCapabilityUnavailable, result.FailureCode);
+        Assert.Contains("disabled by runtime policy", result.ResultText, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, tool.CallCount);
+    }
+
     private static OpenClawToolExecutor CreateExecutor(
         IReadOnlyList<ITool> tools,
         IToolSandbox? toolSandbox = null,
         GatewayConfig? config = null,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        IReadOnlyList<IToolResultInterceptor>? interceptors = null)
         => new(
             tools,
             toolTimeoutSeconds: 5,
@@ -317,7 +490,8 @@ public sealed class OpenClawToolExecutorTests
             metrics: new RuntimeMetrics(),
             logger: logger ?? NullLogger.Instance,
             config: config,
-            toolSandbox: toolSandbox);
+            toolSandbox: toolSandbox,
+            interceptors: interceptors);
 
     private static Session CreateSession(string channelId = "websocket", string? prompt = null)
         => new()
@@ -394,6 +568,32 @@ public sealed class OpenClawToolExecutorTests
             => throw new InvalidOperationException(message);
     }
 
+    private sealed class LocalExecutionDisabledTool : ITool, IToolLocalExecutionPolicy
+    {
+        public string Name => "policy_blocked";
+        public string Description => "Tool that cannot run locally.";
+        public string ParameterSchema => """{"type":"object","properties":{"action":{"type":"string"}}}""";
+        public bool LocalExecutionSupported => false;
+        public string LocalExecutionUnavailableFailureCode => ToolFailureCodes.RuntimeCapabilityUnavailable;
+        public string LocalExecutionUnavailableMessage => "Error: Local execution is unavailable for this policy tool.";
+
+        public ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
+            => throw new InvalidOperationException("Local execution should not be invoked.");
+    }
+
+    private sealed class RecordingInterceptor : IToolResultInterceptor
+    {
+        public int Order => 0;
+        public string Name => "recording";
+        public ReductionContext? Context { get; private set; }
+
+        public ValueTask<string> InterceptAsync(ReductionContext context, CancellationToken ct)
+        {
+            Context = context;
+            return new ValueTask<string>(context.RawOutput);
+        }
+    }
+
     private sealed class ListLogger : ILogger
     {
         public List<string> Messages { get; } = [];
@@ -409,5 +609,20 @@ public sealed class OpenClawToolExecutorTests
             Exception? exception,
             Func<TState, Exception?, string> formatter)
             => Messages.Add(formatter(state, exception));
+    }
+
+    private sealed class RecordingTool(string name, string result) : ITool
+    {
+        private int _callCount;
+        public int CallCount => Volatile.Read(ref _callCount);
+        public string Name => name;
+        public string Description => "Recording tool";
+        public string ParameterSchema => """{"type":"object","properties":{"value":{"type":"string"}}}""";
+
+        public ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
+        {
+            Interlocked.Increment(ref _callCount);
+            return ValueTask.FromResult(result);
+        }
     }
 }

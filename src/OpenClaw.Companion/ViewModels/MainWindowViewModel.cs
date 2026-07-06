@@ -104,6 +104,11 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _client.OnTextMessage += HandleInboundText;
         _client.OnEnvelopeReceived += HandleCanvasEnvelope;
         _client.OnError += err => AddSystemMessage($"Error: {err}");
+        Messages.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(HasMessages));
+            OnPropertyChanged(nameof(HasNoMessages));
+        };
 
         LoadSettings();
         RefreshManagedGatewayStateCore();
@@ -131,6 +136,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             SetupWorkspacePath = string.IsNullOrWhiteSpace(settings.SetupWorkspacePath)
                 ? _managedGateway.WorkspacePath
                 : settings.SetupWorkspacePath;
+            SetupLocalModelPath = settings.SetupLocalModelPath ?? "";
             _managedGateway.SetProviderApiKey(_settingsStore.LoadProviderApiKey(settings.AllowPlaintextTokenFallback));
             ApplyEnvironmentSettings();
         }
@@ -155,10 +161,11 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             ApprovalDesktopNotificationsEnabled = ApprovalDesktopNotificationsEnabled,
             ApprovalDesktopNotificationsOnlyWhenUnfocused = ApprovalDesktopNotificationsOnlyWhenUnfocused,
             AutoStartLocalGateway = AutoStartLocalGateway,
-            SetupProvider = SetupProvider,
+            SetupProvider = NormalizeSetupProvider(SetupProvider),
             SetupModel = SetupModel,
             SetupModelPreset = SetupModelPreset,
             SetupWorkspacePath = SetupWorkspacePath,
+            SetupLocalModelPath = SetupLocalModelPath,
             AuthToken = string.IsNullOrWhiteSpace(AuthToken) ? null : AuthToken
         });
         ShowSettingsWarningIfNeeded();
@@ -174,6 +181,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         if (!string.IsNullOrWhiteSpace(authToken))
             AuthToken = authToken;
     }
+
+    private static string NormalizeSetupProvider(string? provider)
+        => string.IsNullOrWhiteSpace(provider) ? "openai" : provider.Trim();
 
     private static string ConvertBaseUrlToWebSocketUrl(string baseUrl)
         => ManagedGatewayService.BuildWebSocketUrl(baseUrl);

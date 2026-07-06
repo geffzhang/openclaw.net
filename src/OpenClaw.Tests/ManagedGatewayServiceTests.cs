@@ -3,6 +3,7 @@ using Xunit;
 
 namespace OpenClaw.Tests;
 
+[Collection(EnvironmentVariableCollection.Name)]
 public sealed class ManagedGatewayServiceTests : IDisposable
 {
     private readonly string _tempDir;
@@ -121,10 +122,110 @@ public sealed class ManagedGatewayServiceTests : IDisposable
             ApiKey: null,
             ModelPresetId: null,
             WorkspacePath: Path.Join(_tempDir, "workspace"),
-            ConfigPath: Path.Join(_tempDir, "config.json")), CancellationToken.None);
+            ConfigPath: Path.Join(_tempDir, "config.json")), TestContext.Current.CancellationToken);
 
         Assert.False(result.IsSuccess);
         Assert.Contains("API key", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task RunSetupAsync_AllowsEmbeddedWithoutApiKeyAndPassesPreset()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+
+        var cliDir = Path.Join(_tempDir, "cli");
+        Directory.CreateDirectory(cliDir);
+        var cliPath = Path.Join(cliDir, BinaryName("openclaw"));
+        File.WriteAllText(cliPath, """
+        #!/usr/bin/env sh
+        printf '%s\n' "$@" > "$OPENCLAW_ARG_CAPTURE_PATH"
+        exit 0
+        """);
+        File.SetUnixFileMode(
+            cliPath,
+            UnixFileMode.UserRead |
+            UnixFileMode.UserWrite |
+            UnixFileMode.UserExecute);
+
+        var argCapturePath = Path.Join(_tempDir, "embedded-args.txt");
+        var previousArgCapturePath = Environment.GetEnvironmentVariable("OPENCLAW_ARG_CAPTURE_PATH");
+        Environment.SetEnvironmentVariable("OPENCLAW_ARG_CAPTURE_PATH", argCapturePath);
+        try
+        {
+            using var service = new ManagedGatewayService(_tempDir);
+
+            var result = await service.RunSetupAsync(new ManagedGatewaySetupRequest(
+                "embedded",
+                "",
+                ApiKey: null,
+                ModelPresetId: null,
+                WorkspacePath: Path.Join(_tempDir, "workspace"),
+                ConfigPath: Path.Join(_tempDir, "config.json")), TestContext.Current.CancellationToken);
+
+            var args = File.ReadAllText(argCapturePath);
+
+            Assert.True(result.IsSuccess, result.Message);
+            Assert.Contains("embedded", args);
+            Assert.Contains("gemma-local-small-q4", args);
+            Assert.Contains("embedded-gemma-small-q4", args);
+            Assert.DoesNotContain("--api-key", args);
+            Assert.DoesNotContain("env:OPENCLAW_MODEL_PROVIDER_KEY", args);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENCLAW_ARG_CAPTURE_PATH", previousArgCapturePath);
+        }
+    }
+
+    [Fact]
+    public async Task RunLocalModelCommandAsync_UsesModelsCliSurface()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+
+        var cliDir = Path.Join(_tempDir, "cli");
+        Directory.CreateDirectory(cliDir);
+        var cliPath = Path.Join(cliDir, BinaryName("openclaw"));
+        File.WriteAllText(cliPath, """
+        #!/usr/bin/env sh
+        printf '%s\n' "$@" > "$OPENCLAW_ARG_CAPTURE_PATH"
+        printf 'ok'
+        exit 0
+        """);
+        File.SetUnixFileMode(
+            cliPath,
+            UnixFileMode.UserRead |
+            UnixFileMode.UserWrite |
+            UnixFileMode.UserExecute);
+
+        var argCapturePath = Path.Join(_tempDir, "model-args.txt");
+        var previousArgCapturePath = Environment.GetEnvironmentVariable("OPENCLAW_ARG_CAPTURE_PATH");
+        Environment.SetEnvironmentVariable("OPENCLAW_ARG_CAPTURE_PATH", argCapturePath);
+        try
+        {
+            using var service = new ManagedGatewayService(_tempDir);
+
+            var result = await service.RunLocalModelCommandAsync(
+                "install",
+                "embedded-gemma-small-q4",
+                "/tmp/model.gguf",
+                TestContext.Current.CancellationToken);
+
+            var args = File.ReadAllText(argCapturePath);
+            Assert.True(result.IsSuccess, result.Message);
+            Assert.Equal("ok", result.Message);
+            Assert.Contains("models", args);
+            Assert.Contains("install", args);
+            Assert.Contains("embedded-gemma-small-q4", args);
+            Assert.Contains("--accept-license", args);
+            Assert.Contains("--path", args);
+            Assert.Contains("/tmp/model.gguf", args);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENCLAW_ARG_CAPTURE_PATH", previousArgCapturePath);
+        }
     }
 
     [Fact]
@@ -166,7 +267,7 @@ public sealed class ManagedGatewayServiceTests : IDisposable
                 ApiKey: "super-secret",
                 ModelPresetId: null,
                 WorkspacePath: Path.Join(_tempDir, "workspace"),
-                ConfigPath: Path.Join(_tempDir, "config.json")), CancellationToken.None);
+                ConfigPath: Path.Join(_tempDir, "config.json")), TestContext.Current.CancellationToken);
 
             var args = File.ReadAllText(argCapturePath);
             var childProviderKey = File.ReadAllText(envCapturePath);
@@ -256,7 +357,7 @@ public sealed class ManagedGatewayServiceTests : IDisposable
             using var service = new ManagedGatewayService(_tempDir, httpClient, configPath: configPath);
             service.SetProviderApiKey("super-secret");
 
-            var result = await service.StartAsync(authToken: null, CancellationToken.None);
+            var result = await service.StartAsync(authToken: null, TestContext.Current.CancellationToken);
 
             Assert.False(result.IsSuccess);
             Assert.Equal("super-secret", File.ReadAllText(envCapturePath));

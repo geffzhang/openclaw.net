@@ -21,10 +21,10 @@ jobs:
     env:
       PACKAGE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -45,7 +45,7 @@ jobs:
           dotnet pack src/OpenClaw.SemanticKernelAdapter/OpenClaw.SemanticKernelAdapter.csproj -c Release --no-restore -p:PackageVersion=${PACKAGE_VERSION} -o ./artifacts/nuget
 
       - name: Upload package artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: nuget-packages-${{ env.PACKAGE_VERSION }}
           path: ./artifacts/nuget

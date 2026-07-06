@@ -2,9 +2,7 @@ using System.Net.Http.Headers;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-#if OPENCLAW_ENABLE_MAF_EXPERIMENT
 using A2A;
-#endif
 using Microsoft.Extensions.Configuration;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Plugins;
@@ -23,11 +21,9 @@ internal static class GatewayBootstrapExtensions
 
         builder.Services.ConfigureHttpJsonOptions(opts =>
         {
-#if OPENCLAW_ENABLE_MAF_EXPERIMENT
             var a2aResolver = A2AJsonUtilities.DefaultOptions.TypeInfoResolver;
             if (a2aResolver is not null)
                 opts.SerializerOptions.TypeInfoResolverChain.Add(a2aResolver);
-#endif
             opts.SerializerOptions.TypeInfoResolverChain.Add(GatewayJsonContext.Default);
             opts.SerializerOptions.TypeInfoResolverChain.Add(CoreJsonContext.Default);
         });
@@ -267,13 +263,23 @@ internal static class GatewayBootstrapExtensions
 
     private static void HydratePluginEntryConfigJson(GatewayConfig config, IConfiguration configuration)
     {
-        var entriesSection = configuration.GetSection("OpenClaw").GetSection("Plugins").GetSection("Entries");
+        var pluginsSection = configuration.GetSection("OpenClaw").GetSection("Plugins");
+        HydrateEntryConfigJson(pluginsSection.GetSection("Entries"), config.Plugins.Entries);
+        HydrateEntryConfigJson(
+            pluginsSection.GetSection("DynamicNative").GetSection("Entries"),
+            config.Plugins.DynamicNative.Entries);
+    }
+
+    private static void HydrateEntryConfigJson(
+        IConfigurationSection entriesSection,
+        Dictionary<string, PluginEntryConfig> entries)
+    {
         foreach (var pluginSection in entriesSection.GetChildren())
         {
-            if (!config.Plugins.Entries.TryGetValue(pluginSection.Key, out var entry))
+            if (!entries.TryGetValue(pluginSection.Key, out var entry))
             {
                 entry = new PluginEntryConfig();
-                config.Plugins.Entries[pluginSection.Key] = entry;
+                entries[pluginSection.Key] = entry;
             }
 
             var pluginConfigSection = pluginSection.GetSection("Config");

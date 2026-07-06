@@ -17,6 +17,7 @@ using OpenClaw.Core.Validation;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Extensions;
 using OpenClaw.Gateway.Models;
+using OpenClaw.McpApp;
 using OpenClaw.Payments.Core;
 
 namespace OpenClaw.Gateway.Composition;
@@ -52,6 +53,7 @@ internal static partial class RuntimeInitializationExtensions
             AutomationService = app.Services.GetRequiredService<GatewayAutomationService>(),
             PluginHealth = app.Services.GetRequiredService<PluginHealthService>(),
             MemoryStore = app.Services.GetRequiredService<IMemoryStore>(),
+            StructuredMemoryProviderFactory = () => app.Services.GetRequiredService<IStructuredMemoryProvider>(),
             SessionSearchStore = app.Services.GetRequiredService<ISessionSearchStore>(),
             UserProfileStore = app.Services.GetRequiredService<IUserProfileStore>(),
             ProcessService = app.Services.GetRequiredService<ExecutionProcessService>(),
@@ -63,13 +65,16 @@ internal static partial class RuntimeInitializationExtensions
             ToolSandbox = app.Services.GetService<IToolSandbox>(),
             Pipeline = app.Services.GetRequiredService<MessagePipeline>(),
             WebSocketChannel = app.Services.GetRequiredService<WebSocketChannel>(),
+            MediaCache = app.Services.GetRequiredService<MediaCacheStore>(),
             CanvasBroker = app.Services.GetRequiredService<CanvasCommandBroker>(),
             NativeRegistry = app.Services.GetRequiredService<NativePluginRegistry>(),
             McpRegistry = app.Services.GetRequiredService<McpServerToolRegistry>(),
+            McpAppRegistry = app.Services.GetRequiredService<McpAppRegistry>(),
             ExternalCliRegistry = app.Services.GetRequiredService<IExternalCliConnectorRegistry>(),
             ExternalCliRunner = app.Services.GetRequiredService<IExternalCliRunner>(),
             ExternalCliAudit = app.Services.GetRequiredService<IExternalCliAuditSink>(),
-            ExternalCliEvents = app.Services.GetRequiredService<IExternalCliEventSink>()
+            ExternalCliEvents = app.Services.GetRequiredService<IExternalCliEventSink>(),
+            GoalService = app.Services.GetRequiredService<IGoalService>()
         };
 
     private static async Task<ChannelComposition> BuildChannelCompositionAsync(
@@ -568,6 +573,7 @@ internal static partial class RuntimeInitializationExtensions
         public required GatewayAutomationService AutomationService { get; init; }
         public required PluginHealthService PluginHealth { get; init; }
         public required IMemoryStore MemoryStore { get; init; }
+        public required Func<IStructuredMemoryProvider> StructuredMemoryProviderFactory { get; init; }
         public required ISessionSearchStore SessionSearchStore { get; init; }
         public required IUserProfileStore UserProfileStore { get; init; }
         public required ExecutionProcessService ProcessService { get; init; }
@@ -579,13 +585,16 @@ internal static partial class RuntimeInitializationExtensions
         public IToolSandbox? ToolSandbox { get; init; }
         public required MessagePipeline Pipeline { get; init; }
         public required WebSocketChannel WebSocketChannel { get; init; }
+        public required MediaCacheStore MediaCache { get; init; }
         public required CanvasCommandBroker CanvasBroker { get; init; }
         public required NativePluginRegistry NativeRegistry { get; init; }
         public required McpServerToolRegistry McpRegistry { get; init; }
+        public required McpAppRegistry McpAppRegistry { get; init; }
         public required IExternalCliConnectorRegistry ExternalCliRegistry { get; init; }
         public required IExternalCliRunner ExternalCliRunner { get; init; }
         public required IExternalCliAuditSink ExternalCliAudit { get; init; }
         public required IExternalCliEventSink ExternalCliEvents { get; init; }
+        public required IGoalService GoalService { get; init; }
     }
 
     private sealed class ChannelComposition

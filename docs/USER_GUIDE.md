@@ -20,6 +20,14 @@ dotnet run --project src/OpenClaw.Cli -c Release -- start
 
 Use `--profile public` when you are preparing a reverse-proxy or internet-facing deployment. If `openclaw start` finds an existing config, it reuses it; if it needs to run setup, the flow writes an external config file, a matching env example, and prints the exact gateway launch, `--doctor`, and `openclaw admin posture` commands for that config.
 
+For private access from other devices in your tailnet, keep OpenClaw.NET bound to `127.0.0.1` and use Tailscale Serve. The guided helper prints the recommended Serve command and checks:
+
+```bash
+openclaw setup tailscale serve
+```
+
+See [deployment/TAILSCALE.md](deployment/TAILSCALE.md).
+
 Continue the supported bootstrap flow with:
 
 ```bash
@@ -70,6 +78,24 @@ Important distinction:
 - `openclaw setup` and `openclaw init` generate the supported onboarding configs
 - directly editing `src/OpenClaw.Gateway/appsettings.json` is a lower-level path and can expose optional features that are not part of the easiest first run
 - direct gateway startup now prints explicit startup phases and a ready banner with `/chat`, `/admin`, `/doctor/text`, `/health`, `/mcp`, and `/ws`
+
+## A2A Task Quick View
+
+If A2A is enabled (`OpenClaw:MicrosoftAgentFramework:EnableA2A=true`), OpenClaw exposes:
+
+- HTTP+JSON: `/a2a`
+- JSON-RPC: `/a2a/rpc`
+- Agent Card discovery: `/.well-known/agent-card.json`
+
+A2A requests run with protocol task semantics. `message:send` and `message:stream` both execute in task context, and streaming follows the standard lifecycle:
+
+- `submitted`
+- `working`
+- terminal `completed` or `failed`
+
+Task cancellation is wired through the A2A handler when a task id is provided. The current task store is in-memory (`ITaskStore`), so task state is not durable across process restarts.
+
+For the full A2A behavior and operator notes, see [a2a.md](a2a.md).
 
 ## Operator Auth Model
 
@@ -163,22 +189,51 @@ OpenClaw supports native routing for several providers out-of-the-box. Change th
 - **Recommended Setup**: choose an explicit preset such as `ollama-general`, `ollama-agentic`, or `ollama-vision`
 - **Notes**: OpenClaw uses Ollama's native `/api/chat` and `/api/embed` endpoints. Legacy `/v1` compatibility URLs still load, but `openclaw models doctor` warns so you can migrate to the native base URL.
 
-#### 4. Claude / Anthropic
+#### 4. Embedded Local Models
+- **Provider**: `"embedded"`
+- **Required**: a verified local model package and a local sidecar runtime
+- **Recommended Setup**: `embedded-gemma-small-q4` for first-run private/offline helper tasks
+- **Notes**: OpenClaw owns package install/verify, cache paths, sidecar startup, health checks, and request mapping. Video support is frame-based: local `video/*` inputs are sampled into ordered image frames before the model call. LiteRT-LM packages are experimental and require an OpenClaw-compatible adapter binary. See [Embedded Local Models](LOCAL_MODELS.md). For the OpenSquilla-style turn-routing layer that can map `T0`-`T3` turns onto existing model profiles and tool allowlists, see [OpenSquilla Dynamic Turn Routing](opensquilla-dynamic-turn-routing.md).
+
+#### 5. Claude / Anthropic
 - **Provider**: `"anthropic"` or `"claude"`
 - **Required**: `ApiKey` and `Model`
 - **Optional**: `Endpoint`
 - **Notes**: This uses the native Anthropic client. You only need `Endpoint` when routing through a proxy or compatible gateway.
 
-#### 5. Gemini / Google
+#### 6. Gemini / Google
 - **Provider**: `"gemini"` or `"google"`
 - **Required**: `ApiKey` and `Model`
 - **Optional**: `Endpoint`
 - **Notes**: This uses the native Gemini client for chat and embeddings. You only need `Endpoint` when routing through a proxy or compatible gateway.
 
-#### 6. Groq / Together AI / LM Studio / OpenAI-compatible
+#### 7. Groq / Together AI / LM Studio / OpenAI-compatible
 - **Provider**: `"groq"`, `"together"`, `"lmstudio"`, or `"openai-compatible"`
 - **Required**: `ApiKey`, `Model`, and usually `Endpoint`
 - **Notes**: These providers are accessed via the OpenAI-compatible REST abstractions. Ensure that you provide the proper base API URL as the `Endpoint` when required by the target service.
+
+#### 8. Aperture by Tailscale
+- **Provider**: `"aperture"` or `"openai-compatible"` with an Aperture endpoint
+- **Required**: `Endpoint`/`BaseUrl` and `Model`; `ApiKey` is required for bearer-token mode
+- **Optional**: `AuthMode = "tailnet-identity"` for tailnet identity access without a provider bearer token
+- **Notes**: Aperture is an optional upstream AI gateway route. OpenClaw.NET still owns agents, tools, sessions, approvals, memory, channels, MCP, and runtime governance. Request metadata headers are disabled by default and are sent only when `SendRequestMetadata` is explicitly enabled. The correlation ID header name is configurable per model profile via `CorrelationIdHeader` (default: `X-OpenClaw-Correlation-Id`).
+
+Setup helper:
+
+```bash
+openclaw setup provider aperture \
+  --endpoint https://YOUR_APERTURE_ENDPOINT \
+  --model YOUR_APERTURE_MODEL_ROUTE \
+  --auth-mode bearer \
+  --env-var OPENCLAW_APERTURE_TOKEN
+```
+
+For private runtime access, see [deployment/TAILSCALE.md](deployment/TAILSCALE.md). Aperture is a separate optional upstream model-gateway route.
+
+#### 9. Microsoft.Extensions.AI provider bridge
+- **Provider**: your dynamic provider id, for example `"my-meai-provider"`
+- **Required**: JIT runtime mode, dynamic native plugins enabled, a factory implementing `IMicrosoftExtensionsAiChatClientFactory`, and at least one model id
+- **Notes**: This optional bridge is for advanced .NET integrations where you already have an `IChatClient`. OpenClaw still owns routing, policy, budget checks, tracing, approvals, sessions, and usage accounting. See [Microsoft.Extensions.AI Provider Bridge](providers/microsoft-extensions-ai.md).
 
 ---
 
@@ -259,6 +314,99 @@ Skill locations (precedence order):
 2. Managed: `~/.openclaw/skills/<skill>/SKILL.md`
 3. Bundled: `skills/<skill>/SKILL.md` (shipped with the gateway)
 4. Extra dirs: `OpenClaw:Skills:Load:ExtraDirs`
+
+### Meta skill structured output contract
+
+Meta skills can set `final_text_mode: structured` to return a machine-readable envelope instead of plain text.
+
+Supported `final_text_mode` values for `kind: meta` skills:
+
+- `auto`: use the latest executed step output.
+- `raw`: same behavior as `auto` for current runtime compatibility.
+- `step:<step-id>`: use a specific step output as final text. The referenced `<step-id>` must exist in `composition.steps`.
+- `structured`: return the structured envelope shown below.
+
+Invalid `final_text_mode` values now fail fast during skill parsing (the skill is rejected and not loaded).
+
+For `llm_classify` steps, parser governance also validates:
+
+- every `route` label must appear in declared `options`
+- every `route` target step ID must exist in the same `composition.steps`
+
+General composition rule: when a step declares `with`, it must be a JSON object (non-object payloads are rejected during parsing).
+
+Step-kind field consistency rule: `skill_exec` steps must declare a non-empty `skill` value.
+Step-kind field consistency rule: `tool_call` steps must declare `tool` and must not declare `skill`.
+Step-kind field consistency rule: `skill_exec` steps must not declare `tool`.
+Step-kind field consistency rule: `agent` steps must not declare `tool`.
+Step-kind field consistency rule: `llm_chat`, `llm_classify`, and `user_input` steps must not declare `skill` or `tool`.
+
+### Skill loading diagnostics (`error_code`)
+
+When a skill file fails to parse during scanning, OpenClaw logs a warning with a normalized parser diagnostic code:
+
+- `Failed to parse skill at <path> (error_code=<code>)`
+
+This applies to both root `SKILL.md` and `<skill>/SKILL.md` directory scans.
+
+Current parse-phase `error_code` values include:
+
+- `invalid_frontmatter`: frontmatter delimiters are missing or malformed.
+- `missing_name`: required `name` is missing in frontmatter.
+- `invalid_kind`: `kind` is not one of the supported values.
+- `missing_meta_composition`: `kind: meta` was declared without `composition`.
+- `invalid_meta_composition`: `composition` JSON is malformed or has invalid shape.
+- `invalid_with_payload`: a step declared `with` but it was not a JSON object.
+- `invalid_step_kind_fields`: step field constraints were violated for the declared `kind`.
+- `unsupported_step_kind`: composition references a step kind not supported by parser governance.
+- `duplicate_step_id`: composition contains duplicate step IDs.
+- `invalid_dependency`: `depends_on` references a missing step ID.
+- `self_dependency`: a step depends on itself.
+- `dependency_cycle`: composition dependency graph contains a cycle.
+- `invalid_classify_step`: `llm_classify` `options` / `route` governance failed.
+- `invalid_final_text_mode`: `final_text_mode` is invalid for current composition.
+- `parse_failed`: fallback when parsing failed but no more specific code applies.
+
+Current response shape:
+
+```json
+{
+  "skill": "meta-flow",
+  "final_text": "...",
+  "error": "...",
+  "error_code": "dependency_not_completed",
+  "steps": [
+    {
+      "id": "first",
+      "kind": "tool_call",
+      "status": "failed",
+      "duration_ms": 12.5,
+      "continued": false,
+      "failure_code": "tool_failed"
+    }
+  ]
+}
+```
+
+Notes:
+
+- `error` and `error_code` are present only when the meta run fails.
+- `steps` is present in structured mode even when early validation fails (it may be empty).
+- `failure_code` is step-level and only appears for failed steps.
+- For `user_input` steps without available value/default, runtime saves a session checkpoint (`MetaExecutionCheckpoint`) and returns `user_input_required`. The next invocation with user input resumes from the checkpoint without re-running completed steps.
+
+Current normalized top-level `error_code` values:
+
+- `invalid_tool_step`: a `tool_call` step did not declare `tool`.
+- `unsupported_step_kind`: step `kind` is not supported by the current runtime.
+- `step_failed`: a step failed and execution did not continue.
+- `invalid_dag`: duplicate step IDs, missing dependencies, self-dependencies, cycles, or stalled graph progression.
+- `invalid_classification`: an `llm_classify` result was outside declared `options`.
+- `user_input_required`: a `user_input` step could not resolve a value/default in the current execution context.
+- `metadata_capability_denied`: a meta `tool_call` step requested a tool that is not in metadata capabilities allowlist.
+- `meta_step_error`: fallback for other meta-step failures.
+
+When `final_text_mode` is not `structured`, meta execution returns plain text and prepends `Error:` on failure.
 
 ### Installing skills from ClawHub
 

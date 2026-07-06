@@ -14,11 +14,13 @@ public sealed class GatewayConfig
     public RuntimeConfig Runtime { get; set; } = new();
     public LlmProviderConfig Llm { get; set; } = new();
     public ModelsConfig Models { get; set; } = new();
+    public LocalInferenceConfig LocalInference { get; set; } = new();
     public MemoryConfig Memory { get; set; } = new();
     public SecurityConfig Security { get; set; } = new();
     public WebSocketConfig WebSocket { get; set; } = new();
     public CanvasConfig Canvas { get; set; } = new();
     public ToolingConfig Tooling { get; set; } = new();
+    public HarnessConfig Harness { get; set; } = new();
     public ToolGovernanceConfig Governance { get; set; } = new();
     public PaymentConfig Payments { get; set; } = new();
     public ExternalCliOptions ExternalCli { get; set; } = new();
@@ -30,13 +32,17 @@ public sealed class GatewayConfig
     public PluginsConfig Plugins { get; set; } = new();
     public SkillsConfig Skills { get; set; } = new();
     public DelegationConfig Delegation { get; set; } = new();
+    public WorkflowsConfig Workflows { get; set; } = new();
     public PulseConfig Pulse { get; set; } = new();
     public CronConfig Cron { get; set; } = new();
     public AutomationsConfig Automations { get; set; } = new();
     public ProfilesConfig Profiles { get; set; } = new();
     public LearningConfig Learning { get; set; } = new();
     public WebhooksConfig Webhooks { get; set; } = new();
+    public DynamicTurnRoutingConfig DynamicTurnRouting { get; set; } = new();
     public RoutingConfig Routing { get; set; } = new();
+    public McpAppsConfig McpApps { get; set; } = new();
+    public DeploymentConfig Deployment { get; set; } = new();
     public TailscaleConfig Tailscale { get; set; } = new();
     public GmailPubSubConfig GmailPubSub { get; set; } = new();
     public MdnsConfig Mdns { get; set; } = new();
@@ -45,6 +51,7 @@ public sealed class GatewayConfig
 
     public int MaxConcurrentSessions { get; set; } = 64;
     public int SessionTimeoutMinutes { get; set; } = 30;
+    public BackgroundExecutionConfig BackgroundExecution { get; set; } = new();
 
     /// <summary>Max total tokens (input + output) per session. 0 = unlimited.</summary>
     public long SessionTokenBudget { get; set; } = 0;
@@ -80,12 +87,34 @@ public sealed class TokenCostRateConfig
     public decimal OutputUsdPer1K { get; set; }
 }
 
+public sealed class BackgroundExecutionConfig
+{
+    public bool Enabled { get; set; } = false;
+    public bool AutoResumeOnStartup { get; set; } = false;
+    public int AutoResumeStaggerSeconds { get; set; } = 5;
+    public int AutoResumeMaxConcurrent { get; set; } = 3;
+    public int MaxConcurrentBackgroundTurns { get; set; } = 3;
+    public int MaxIterationsPerBatch { get; set; } = 20;
+    public long DefaultTokenBudget { get; set; } = 128_000;
+    public int MaxWallClockMinutes { get; set; } = 360;
+    public int MaxToolCalls { get; set; } = 1_000;
+    public int MaxContinuationTurns { get; set; } = 200;
+    public int ProgressNotifyIntervalMinutes { get; set; } = 10;
+    public bool NotifyOnStart { get; set; } = true;
+    public bool NotifyOnCompletion { get; set; } = true;
+    public bool NotifyOnBlocked { get; set; } = true;
+    public bool NotifyOnBudgetLimited { get; set; } = true;
+}
+
 public sealed class LlmProviderConfig
 {
     public string Provider { get; set; } = "openai";
     public string Model { get; set; } = "gpt-4o";
     public string? ApiKey { get; set; }
     public string? Endpoint { get; set; }
+    public string AuthMode { get; set; } = "bearer";
+    public bool SendRequestMetadata { get; set; } = false;
+    public string? CorrelationIdHeader { get; set; }
     public string[] FallbackModels { get; set; } = [];
     public int MaxTokens { get; set; } = 4096;
     public float Temperature { get; set; } = 0.7f;
@@ -103,6 +132,35 @@ public sealed class LlmProviderConfig
     public int CircuitBreakerCooldownSeconds { get; set; } = 30;
 
     public PromptCachingConfig PromptCaching { get; set; } = new();
+}
+
+public sealed class LocalInferenceConfig
+{
+    public bool Enabled { get; set; } = false;
+    public bool AutoStart { get; set; } = true;
+    public string Backend { get; set; } = "llama.cpp";
+    public string? RuntimePath { get; set; }
+    public string? ModelsRoot { get; set; }
+    public string? LogsPath { get; set; }
+    public string Host { get; set; } = "127.0.0.1";
+    public int Port { get; set; } = 0;
+    public string Threads { get; set; } = "auto";
+    public string GpuLayers { get; set; } = "auto";
+    public int ContextSize { get; set; } = 0;
+    public int StartupTimeoutSeconds { get; set; } = 30;
+    public int MaxRestartAttempts { get; set; } = 3;
+    public bool EnableJinja { get; set; } = true;
+    public string? ChatTemplate { get; set; }
+    public string? ChatTemplateFilePath { get; set; }
+    public string? MultimodalProjectorPath { get; set; }
+    public string? MediaPath { get; set; }
+    public string? DraftModelPath { get; set; }
+    public string DraftModelGpuLayers { get; set; } = "auto";
+    public string? ReasoningEffort { get; set; }
+    public string? ReasoningMode { get; set; }
+    public int? ReasoningBudget { get; set; }
+    public string? LiteRtRuntimePath { get; set; }
+    public string? LiteRtMediaPipeGraphPath { get; set; }
 }
 
 public sealed class PromptCachingConfig
@@ -141,6 +199,7 @@ public sealed class MemoryConfig
 
     public MemorySqliteConfig Sqlite { get; set; } = new();
     public MemoryMempalaceConfig Mempalace { get; set; } = new();
+    public FractalMemoryConfig Fractal { get; set; } = new();
     public MemoryRecallConfig Recall { get; set; } = new();
     public MemoryRetentionConfig Retention { get; set; } = new();
 
@@ -196,6 +255,26 @@ public sealed class MemoryMempalaceConfig
     public string SessionDbPath { get; set; } = "./memory/mempalace/openclaw-sessions.db";
     public string KnowledgeGraphDbPath { get; set; } = "./memory/mempalace/kg.db";
     public int MaxSearchCandidates { get; set; } = 200;
+}
+
+public sealed class FractalMemoryConfig
+{
+    public bool Enabled { get; set; } = false;
+    public string Mode { get; set; } = "mcp";
+    public string RepositoryRoot { get; set; } = "";
+    public string McpCommand { get; set; } = "fractalmem-mcp";
+    public int DefaultDepth { get; set; } = 1;
+    public string DefaultView { get; set; } = "index";
+    public string DefaultExportMode { get; set; } = "compact";
+    public int MaxContextChars { get; set; } = 24_000;
+    public int MaxContextTokens { get; set; } = 6_000;
+    public string AutoContextMode { get; set; } = "off";
+    public bool AllowWrites { get; set; } = false;
+    public bool RequireApprovalForWrites { get; set; } = true;
+    public bool AutoRefreshIndexes { get; set; } = false;
+    public bool IncludeTimeline { get; set; } = false;
+    public bool IncludeDecisions { get; set; } = true;
+    public bool IncludeArtifacts { get; set; } = false;
 }
 
 /// <summary>
@@ -383,6 +462,9 @@ public sealed class ToolingConfig
     /// <summary>Seconds to wait for a tool approval decision before denying. Default: 300 (5 minutes).</summary>
     public int ToolApprovalTimeoutSeconds { get; set; } = 300;
 
+    /// <summary>Enable the emit_artifact tool for multi-stage skill artifact publishing.</summary>
+    public bool EnableEmitArtifact { get; set; } = true;
+
     public bool EnableBrowserTool { get; set; } = true;
     public bool AllowBrowserEvaluate { get; set; } = true;
     public bool BrowserHeadless { get; set; } = true;
@@ -391,6 +473,39 @@ public sealed class ToolingConfig
     public Dictionary<string, ToolsetConfig> Toolsets { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, ToolPresetConfig> Presets { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, string> SurfaceBindings { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+}
+
+public sealed class HarnessConfig
+{
+    /// <summary>Runtime harness mode. Defaults to normal so chat/tool behavior is unchanged.</summary>
+    public string ExecutionMode { get; set; } = HarnessExecutionModes.Normal;
+
+    public PlanExecuteVerifyOptions PlanExecuteVerify { get; set; } = new();
+}
+
+public sealed class PlanExecuteVerifyOptions
+{
+    public bool Enabled { get; set; } = false;
+    public string[] ContractRequiredFor { get; set; } =
+    [
+        PlanExecuteVerifyContractTriggers.HighRiskTools,
+        PlanExecuteVerifyContractTriggers.WriteTools,
+        PlanExecuteVerifyContractTriggers.Shell,
+        PlanExecuteVerifyContractTriggers.Browser,
+        PlanExecuteVerifyContractTriggers.ExternalApi,
+        PlanExecuteVerifyContractTriggers.MultiToolWorkflows
+    ];
+    public string[] RequireApprovalForRisk { get; set; } =
+    [
+        HarnessContractRiskLevels.High,
+        HarnessContractRiskLevels.Critical
+    ];
+    public bool CreateEvidenceBundles { get; set; } = true;
+    public bool RunVerification { get; set; } = true;
+    public bool AutoRollbackOnFailedVerification { get; set; } = false;
+    public int MaxPlanActions { get; set; } = 20;
+    public int MaxVerificationSteps { get; set; } = 20;
+    public string[] RegressionCategories { get; set; } = [];
 }
 
 public sealed class PaymentConfig
@@ -751,7 +866,15 @@ public sealed class AgentRouteConfig
     public string[] AllowedTools { get; set; } = [];
 }
 
-// ── Tailscale ───────────────────────────────────────────────────
+// ── Deployment ──────────────────────────────────────────────────
+
+public sealed class DeploymentConfig
+{
+    public string Mode { get; set; } = "local";
+    public bool PublicExposure { get; set; } = false;
+    public string? ReverseProxy { get; set; }
+    public string? ExpectedLocalUrl { get; set; }
+}
 
 public sealed class TailscaleConfig
 {

@@ -67,10 +67,12 @@ public sealed class MafAgentRuntimeFactory : IAgentRuntimeFactory
             ToolSandbox = context.ToolSandbox,
             ToolGovernance = context.ToolGovernance,
             ToolUsageTracker = context.ToolUsageTracker,
+            TurnTokenUsageObserver = context.TurnTokenUsageObserver,
             IsContractTokenBudgetExceeded = context.IsContractTokenBudgetExceeded,
             IsContractRuntimeBudgetExceeded = context.IsContractRuntimeBudgetExceeded,
             RecordContractTurnUsage = context.RecordContractTurnUsage,
-            AppendContractSnapshot = context.AppendContractSnapshot
+            AppendContractSnapshot = context.AppendContractSnapshot,
+            Interceptors = context.Interceptors
         });
 
     private static GatewayConfig CreateDelegatedConfig(
@@ -107,6 +109,7 @@ public sealed class MafAgentRuntimeFactory : IAgentRuntimeFactory
             Plugins = config.Plugins,
             Skills = config.Skills,
             Delegation = config.Delegation,
+            Workflows = config.Workflows,
             Cron = config.Cron,
             Webhooks = config.Webhooks,
             UsageFooter = config.UsageFooter,
@@ -160,10 +163,12 @@ public sealed class MafAgentRuntimeFactory : IAgentRuntimeFactory
             ToolSandbox = context.ToolSandbox,
             ToolGovernance = context.ToolGovernance,
             ToolUsageTracker = context.ToolUsageTracker,
+            TurnTokenUsageObserver = context.TurnTokenUsageObserver,
             IsContractTokenBudgetExceeded = context.IsContractTokenBudgetExceeded,
             IsContractRuntimeBudgetExceeded = context.IsContractRuntimeBudgetExceeded,
             RecordContractTurnUsage = context.RecordContractTurnUsage,
-            AppendContractSnapshot = context.AppendContractSnapshot
+            AppendContractSnapshot = context.AppendContractSnapshot,
+            Interceptors = context.Interceptors
         });
     }
 }

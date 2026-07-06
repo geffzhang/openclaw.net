@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Threading.Channels;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Agent;
@@ -42,7 +43,9 @@ internal sealed class GatewayInboundMessageWorker
         LearningService? learningService,
         GatewayAutomationService? automationService,
         ContractGovernanceService? contractGovernance,
-        AudioTranscriptionService? audioTranscriptionService = null)
+        GovernanceLedgerService? governanceLedger,
+        AudioTranscriptionService? audioTranscriptionService = null,
+        Background.BackgroundExecutionLimiter? backgroundLimiter = null)
     {
         _ = isNonLoopbackBind;
         _ = sessionLocks;
@@ -69,8 +72,9 @@ internal sealed class GatewayInboundMessageWorker
                         long initialOutputTokens = 0;
                         var automationRetryAttempt = 0;
                         var conversationRecipientId = ResolveConversationRecipientId(msg);
-                        using var processingCts = CreateProcessingCts(msg.RequestCancellation, lifetime.ApplicationStopping);
-                        var processingCt = processingCts?.Token ?? lifetime.ApplicationStopping;
+                        // Browser / WebSocket / Channel request cancellation must not cancel runtime execution.
+                        // Only gateway shutdown stops a running turn.
+                        var processingCt = lifetime.ApplicationStopping;
 
                         async Task FinalizeAutomationRunAsync(AutomationRunCompletion completion, CancellationToken finalizeCt)
                         {
@@ -139,6 +143,17 @@ internal sealed class GatewayInboundMessageWorker
                                         "chat",
                                         msg.ChannelId,
                                         msg.SenderId);
+                                    if (governanceLedger is not null)
+                                    {
+                                        await governanceLedger.TryRecordApprovalDecisionAsync(
+                                            decisionOutcome.Request,
+                                            msg.Approved.Value,
+                                            GovernanceLedgerSources.ToolApproval,
+                                            msg.SenderId,
+                                            msg.ChannelId,
+                                            msg.SenderId,
+                                            lifetime.ApplicationStopping);
+                                    }
                                     RecordApprovalDecisionEvent(
                                         operations,
                                         decisionOutcome.Request,
@@ -212,6 +227,17 @@ internal sealed class GatewayInboundMessageWorker
                                                 "chat",
                                                 msg.ChannelId,
                                                 msg.SenderId);
+                                            if (governanceLedger is not null)
+                                            {
+                                                await governanceLedger.TryRecordApprovalDecisionAsync(
+                                                    decisionOutcome.Request,
+                                                    approved,
+                                                    GovernanceLedgerSources.ToolApproval,
+                                                    msg.SenderId,
+                                                    msg.ChannelId,
+                                                    msg.SenderId,
+                                                    lifetime.ApplicationStopping);
+                                            }
                                             RecordApprovalDecisionEvent(
                                                 operations,
                                                 decisionOutcome.Request,
@@ -497,7 +523,7 @@ internal sealed class GatewayInboundMessageWorker
                             {
                                 messageText = string.IsNullOrWhiteSpace(messageText) ? mediaMarker : $"{mediaMarker}\n{messageText}";
                             }
-                            var useStreaming = msg.ChannelId == "websocket" && wsChannel.IsClientUsingEnvelopes(msg.SenderId);
+                            var useStreaming = ShouldUseStreaming(msg, wsChannel);
 
                             var approvalCallback = ToolApprovalCallbackFactory.Create(
                                 config,
@@ -507,6 +533,7 @@ internal sealed class GatewayInboundMessageWorker
                                 session,
                                 msg.ChannelId,
                                 msg.SenderId,
+                                governanceLedger,
                                 async (request, preview, ct) =>
                                 {
                                     if (msg.ChannelId == "websocket" && wsChannel.IsClientUsingEnvelopes(msg.SenderId))
@@ -553,6 +580,28 @@ internal sealed class GatewayInboundMessageWorker
 
                                 try
                                 {
+                                    var streamLimiterReleaser = backgroundLimiter is not null
+                                        ? await backgroundLimiter.TryAcquireAsync(msg, processingCt)
+                                        : null;
+                                    using var streamLimiterScope = streamLimiterReleaser is { } acquiredStreamLimiter
+                                        ? (IDisposable)acquiredStreamLimiter
+                                        : null;
+
+                                    if (streamLimiterReleaser is null && Background.BackgroundExecutionLimiter.IsBackgroundContinuation(msg))
+                                    {
+                                        RequeueBackgroundContinuation(
+                                            pipeline,
+                                            msg,
+                                            TimeSpan.FromSeconds(1),
+                                            lifetime.ApplicationStopping,
+                                            logger);
+                                        await wsChannel.SendStreamEventAsync(
+                                            msg.SenderId, "text_delta",
+                                            "\n\nBackground execution concurrency limit reached. Turn will be retried.",
+                                            msg.MessageId, processingCt);
+                                        continue;
+                                    }
+
                                     await foreach (var evt in agentRuntime.RunStreamingAsync(
                                         session, messageText, processingCt, approvalCallback: approvalCallback))
                                     {
@@ -646,10 +695,32 @@ internal sealed class GatewayInboundMessageWorker
                                 if (!string.IsNullOrWhiteSpace(effectiveResponseMode))
                                     session.ResponseMode = effectiveResponseMode!;
 
-                                string responseText;
+                                var responseText = string.Empty;
+
+                                AgentTurnResult turnResult;
                                 try
                                 {
-                                    responseText = await agentRuntime.RunAsync(session, messageText, processingCt, approvalCallback: approvalCallback);
+                                    var limiterReleaser = backgroundLimiter is not null
+                                        ? await backgroundLimiter.TryAcquireAsync(msg, processingCt)
+                                        : null;
+                                    using var limiterScope = limiterReleaser is { } acquiredLimiter
+                                        ? (IDisposable)acquiredLimiter
+                                        : null;
+
+                                    if (limiterReleaser is null && Background.BackgroundExecutionLimiter.IsBackgroundContinuation(msg))
+                                    {
+                                        RequeueBackgroundContinuation(
+                                            pipeline,
+                                            msg,
+                                            TimeSpan.FromSeconds(1),
+                                            lifetime.ApplicationStopping,
+                                            logger);
+                                        responseText = "Background execution concurrency limit reached. Turn will be retried.";
+                                        continue;
+                                    }
+
+                                    turnResult = await agentRuntime.RunTurnAsync(session, messageText, processingCt, approvalCallback: approvalCallback);
+                                    responseText = turnResult.Text;
                                 }
                                 finally
                                 {
@@ -657,6 +728,103 @@ internal sealed class GatewayInboundMessageWorker
                                 }
 
                                 await sessionManager.PersistAsync(session, processingCt, sessionLockHeld: true);
+
+                                // Background continuation
+                                if (turnResult.ShouldContinue && config.BackgroundExecution.Enabled)
+                                {
+                                    // Lazy-init BackgroundRun on first continuation
+                                    session.BackgroundRun ??= new BackgroundRunMetadata
+                                    {
+                                        RunId = $"bg_{session.Id}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}",
+                                        StartedAtUtc = DateTimeOffset.UtcNow,
+                                        TokenBudget = config.BackgroundExecution.DefaultTokenBudget,
+                                        MaxContinuationTurns = config.BackgroundExecution.MaxContinuationTurns
+                                    };
+
+                                    session.RunState = SessionRunState.Continuing;
+                                    session.BackgroundRun.ContinuationCount++;
+                                    session.BackgroundRun.ContinuationSequence++;
+                                    session.BackgroundRun.LastContinuedAtUtc = DateTimeOffset.UtcNow;
+                                    session.BackgroundRun.LastStopReason = turnResult.StopReason.ToString();
+
+                                    // Check against MaxContinuationTurns cap
+                                    var maxContinuationTurns = session.BackgroundRun.MaxContinuationTurns > 0
+                                        ? session.BackgroundRun.MaxContinuationTurns
+                                        : config.BackgroundExecution.MaxContinuationTurns;
+                                    if (session.BackgroundRun.ContinuationSequence >= maxContinuationTurns)
+                                    {
+                                        session.RunState = SessionRunState.BudgetLimited;
+                                        session.BackgroundRun.LastStopReason = "MaxContinuationTurnsReached";
+                                        await sessionManager.PersistAsync(session, processingCt, sessionLockHeld: true);
+                                    }
+                                    else
+                                    {
+                                        session.RunState = SessionRunState.Continuing;
+                                        await sessionManager.PersistAsync(session, processingCt, sessionLockHeld: true);
+
+                                        await pipeline.InboundWriter.WriteAsync(new InboundMessage
+                                        {
+                                            ChannelId = msg.ChannelId,
+                                            SenderId = msg.SenderId,
+                                            AccountId = msg.AccountId,
+                                            SessionId = session.Id,
+                                            Text = turnResult.ContinuePrompt ?? "Continue working toward the active goal.",
+                                            Type = BackgroundMessageTypes.AutoContinue,
+                                            IsSystem = true,
+                                            BackgroundRunId = session.BackgroundRun.RunId,
+                                            BackgroundContinuationSequence = session.BackgroundRun.ContinuationSequence
+                                        }, lifetime.ApplicationStopping);
+                                    }
+                                }
+
+                                // Lifecycle notifications for background task terminal states
+                                if (session.BackgroundRun is not null && !turnResult.ShouldContinue)
+                                {
+                                    // Map StopReason to final SessionRunState and persist
+                                    session.RunState = turnResult.StopReason switch
+                                    {
+                                        AgentTurnStopReason.Completed => SessionRunState.Completed,
+                                        AgentTurnStopReason.Blocked => SessionRunState.Blocked,
+                                        AgentTurnStopReason.BudgetLimited => SessionRunState.BudgetLimited,
+                                        AgentTurnStopReason.Failed => SessionRunState.Failed,
+                                        _ => session.RunState
+                                    };
+                                    await sessionManager.PersistAsync(session, processingCt, sessionLockHeld: true);
+
+                                    var notifyText = turnResult.StopReason switch
+                                    {
+                                        AgentTurnStopReason.Completed => $"Background task completed: {turnResult.Text}",
+                                        AgentTurnStopReason.Blocked => $"Background task blocked: {turnResult.Text}",
+                                        AgentTurnStopReason.BudgetLimited => $"Background task paused: budget reached — {turnResult.Text}",
+                                        AgentTurnStopReason.Failed => $"Background task failed: {turnResult.Text}",
+                                        _ => null
+                                    };
+
+                                    if (notifyText is not null)
+                                    {
+                                        var shouldNotify = turnResult.StopReason switch
+                                        {
+                                            AgentTurnStopReason.Completed => config.BackgroundExecution.NotifyOnCompletion,
+                                            AgentTurnStopReason.Blocked => config.BackgroundExecution.NotifyOnBlocked,
+                                            AgentTurnStopReason.BudgetLimited => config.BackgroundExecution.NotifyOnBudgetLimited,
+                                            _ => false
+                                        };
+
+                                        if (shouldNotify)
+                                        {
+                                            await pipeline.OutboundWriter.WriteAsync(new OutboundMessage
+                                            {
+                                                ChannelId = msg.ChannelId,
+                                                RecipientId = conversationRecipientId,
+                                                AccountId = msg.AccountId,
+                                                Text = notifyText,
+                                                SessionId = session.Id,
+                                                ReplyToMessageId = msg.MessageId
+                                            }, lifetime.ApplicationStopping);
+                                        }
+                                    }
+                                }
+
                                 if (learningService is not null)
                                     await learningService.ObserveSessionAsync(session, processingCt);
 
@@ -834,14 +1002,6 @@ internal sealed class GatewayInboundMessageWorker
         }
     }
 
-    private static CancellationTokenSource? CreateProcessingCts(CancellationToken requestCancellation, CancellationToken appStopping)
-    {
-        if (!requestCancellation.CanBeCanceled || requestCancellation == appStopping)
-            return null;
-
-        return CancellationTokenSource.CreateLinkedTokenSource(requestCancellation, appStopping);
-    }
-
     private static string? ResolveOperationalResponseMode(Session session, AutomationDefinition? automation)
     {
         if (automation is not null)
@@ -859,6 +1019,45 @@ internal sealed class GatewayInboundMessageWorker
         }
 
         return null;
+    }
+
+    internal static bool ShouldUseStreaming(InboundMessage msg, WebSocketChannel wsChannel)
+        => !Background.BackgroundExecutionLimiter.IsBackgroundContinuation(msg)
+        && string.Equals(msg.ChannelId, "websocket", StringComparison.Ordinal)
+        && wsChannel.IsClientUsingEnvelopes(msg.SenderId);
+
+    internal static void RequeueBackgroundContinuation(
+        MessagePipeline pipeline,
+        InboundMessage msg,
+        TimeSpan delay,
+        CancellationToken ct,
+        ILogger logger)
+    {
+        if (!Background.BackgroundExecutionLimiter.IsBackgroundContinuation(msg))
+            return;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                if (delay > TimeSpan.Zero)
+                    await Task.Delay(delay, ct);
+
+                await pipeline.InboundWriter.WriteAsync(msg, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                // Gateway is stopping; do not requeue background work.
+            }
+            catch (ChannelClosedException ex)
+            {
+                logger.LogWarning(ex, "Failed to requeue background continuation for session {SessionId}", msg.SessionId);
+            }
+            catch (InvalidOperationException ex)
+            {
+                logger.LogWarning(ex, "Failed to requeue background continuation for session {SessionId}", msg.SessionId);
+            }
+        }, CancellationToken.None);
     }
 
     private static void ObserveBackgroundTask(Task task, ILogger logger, string operation)

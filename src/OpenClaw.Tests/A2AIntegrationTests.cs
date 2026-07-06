@@ -1,7 +1,9 @@
-#if OPENCLAW_ENABLE_MAF_EXPERIMENT
 using System.Text.Json;
 using A2A;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
@@ -9,10 +11,12 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using OpenClaw.Core.Models;
+using OpenClaw.Gateway;
 using OpenClaw.Gateway.A2A;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.MicrosoftAgentFrameworkAdapter;
 using OpenClaw.MicrosoftAgentFrameworkAdapter.A2A;
+using System.Net.Http.Json;
 using Xunit;
 
 namespace OpenClaw.Tests;
@@ -33,6 +37,18 @@ public sealed class A2AIntegrationTests
         var agentInterface = Assert.Single(card.SupportedInterfaces!);
         Assert.Equal("http://localhost:5000/a2a", agentInterface.Url);
         Assert.Equal(ProtocolBindingNames.HttpJson, agentInterface.ProtocolBinding);
+        Assert.True(card.Capabilities!.Streaming);
+    }
+
+    [Fact]
+    public void AgentCardFactory_Does_Not_Advertise_Streaming_When_Disabled()
+    {
+        var options = CreateOptions();
+        options.EnableStreaming = false;
+        var factory = new OpenClawAgentCardFactory(Options.Create(options));
+
+        var card = factory.Create("http://localhost:5000/a2a");
+
         Assert.False(card.Capabilities!.Streaming);
     }
 
@@ -119,11 +135,11 @@ public sealed class A2AIntegrationTests
         var session = await agent.DeserializeSessionAsync(
             document.RootElement,
             jsonSerializerOptions: null,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         var serialized = await agent.SerializeSessionAsync(
             session,
             jsonSerializerOptions: null,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.True(serialized.TryGetProperty("SessionId", out var sessionId));
         Assert.True(serialized.TryGetProperty("SenderId", out var senderId));
@@ -151,7 +167,7 @@ public sealed class A2AIntegrationTests
                 StreamingResponse = false
             },
             eventQueue,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         eventQueue.Complete(null!);
 
         var events = new List<StreamResponse>();
@@ -159,6 +175,49 @@ public sealed class A2AIntegrationTests
             events.Add(evt);
 
         Assert.Empty(events);
+    }
+
+    [Fact]
+    public async Task MessageStream_ViaJsonRpc_Emits_Streaming_Events()
+    {
+        await using var app = await CreateAppAsync();
+        var client = app.GetTestClient();
+
+        using var response = await PostJsonRpcStreamingMessageAsync(client, CreateMessageRequest("hello rpc"));
+        var events = await ReadJsonRpcStreamResponsesAsync(response);
+
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("text/event-stream", response.Content.Headers.ContentType?.MediaType);
+        Assert.True(events.Count >= 4);
+        Assert.Equal(StreamResponseCase.Task, events[0].PayloadCase);
+        Assert.Equal(TaskState.Submitted, events[0].Task!.Status!.State);
+        Assert.Equal(StreamResponseCase.StatusUpdate, events[1].PayloadCase);
+        Assert.Equal(TaskState.Working, events[1].StatusUpdate!.Status!.State);
+        Assert.Contains(events, evt => evt.PayloadCase == StreamResponseCase.ArtifactUpdate);
+        Assert.Contains(events, evt => evt.PayloadCase == StreamResponseCase.StatusUpdate && evt.StatusUpdate!.Status!.State == TaskState.Completed);
+    }
+
+    [Fact]
+    public async Task MessageStream_ViaJsonRpc_Matches_Http_Event_Contract()
+    {
+        await using var app = await CreateAppAsync(bridge: new MultiDeltaExecutionBridge());
+        var client = app.GetTestClient();
+
+        using var httpResponse = await PostHttpStreamingMessageAsync(client, CreateMessageRequest("hello parity"));
+        using var jsonRpcResponse = await PostJsonRpcStreamingMessageAsync(client, CreateMessageRequest("hello parity"));
+        var httpEvents = await ReadStreamResponsesAsync(httpResponse);
+        var jsonRpcEvents = await ReadJsonRpcStreamResponsesAsync(jsonRpcResponse);
+
+        Assert.Equal(httpEvents.Select(static evt => evt.PayloadCase), jsonRpcEvents.Select(static evt => evt.PayloadCase));
+
+        var httpArtifacts = httpEvents.Where(static evt => evt.PayloadCase == StreamResponseCase.ArtifactUpdate).ToList();
+        var jsonRpcArtifacts = jsonRpcEvents.Where(static evt => evt.PayloadCase == StreamResponseCase.ArtifactUpdate).ToList();
+
+        Assert.Equal(httpArtifacts.Count, jsonRpcArtifacts.Count);
+        Assert.All(jsonRpcArtifacts, evt => Assert.Equal("text-delta", evt.ArtifactUpdate!.Artifact!.ArtifactId));
+        Assert.Equal(
+            httpEvents.Last(static evt => evt.PayloadCase == StreamResponseCase.StatusUpdate).StatusUpdate!.Status!.State,
+            jsonRpcEvents.Last(static evt => evt.PayloadCase == StreamResponseCase.StatusUpdate).StatusUpdate!.Status!.State);
     }
 
     [Fact]
@@ -201,7 +260,7 @@ public sealed class A2AIntegrationTests
 
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMicrosoftAgentFrameworkExperiment(configuration);
+        services.AddMicrosoftAgentFramework(configuration);
 
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<MafOptions>>().Value;
@@ -214,6 +273,54 @@ public sealed class A2AIntegrationTests
         Assert.Equal("search", options.A2ASkills[0].Id);
         Assert.Equal("Web Search", options.A2ASkills[0].Name);
         Assert.Equal(["web"], options.A2ASkills[0].Tags);
+    }
+
+    [Fact]
+    public void MafServiceCollectionExtensions_Parses_Legacy_Config_With_Migration_Flag()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [$"{MafOptions.LegacySectionName}:EnableA2A"] = "true",
+                [$"{MafOptions.LegacySectionName}:A2APathPrefix"] = "/legacy/a2a"
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddMicrosoftAgentFramework(configuration);
+
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<MafOptions>>().Value;
+
+        Assert.True(options.EnableA2A);
+        Assert.Equal("/legacy/a2a", options.A2APathPrefix);
+        Assert.True(options.LegacySectionUsed);
+    }
+
+    [Fact]
+    public void MafServiceCollectionExtensions_Prefers_New_Config_Over_Legacy_Config()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [$"{MafOptions.LegacySectionName}:EnableA2A"] = "true",
+                [$"{MafOptions.LegacySectionName}:A2APathPrefix"] = "/legacy/a2a",
+                [$"{MafOptions.SectionName}:EnableA2A"] = "false",
+                [$"{MafOptions.SectionName}:A2APathPrefix"] = "/supported/a2a"
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddMicrosoftAgentFramework(configuration);
+
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<MafOptions>>().Value;
+
+        Assert.False(options.EnableA2A);
+        Assert.Equal("/supported/a2a", options.A2APathPrefix);
+        Assert.False(options.LegacySectionUsed);
     }
 
     [Fact]
@@ -234,7 +341,7 @@ public sealed class A2AIntegrationTests
 
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMicrosoftAgentFrameworkExperiment(configuration);
+        services.AddMicrosoftAgentFramework(configuration);
 
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<MafOptions>>().Value;
@@ -387,6 +494,117 @@ public sealed class A2AIntegrationTests
             IsNonLoopbackBind = true
         };
 
+    private static SendMessageRequest CreateMessageRequest(string text)
+        => new()
+        {
+            Message = new Message
+            {
+                Role = Role.User,
+                MessageId = "message-1",
+                Parts = [Part.FromText(text)]
+            }
+        };
+
+    private static async Task<WebApplication> CreateAppAsync(
+        Action<MafOptions>? configureOptions = null,
+        IOpenClawA2AExecutionBridge? bridge = null)
+    {
+        var options = CreateOptions();
+        configureOptions?.Invoke(options);
+
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseTestServer();
+        builder.Services.AddLogging();
+        builder.Services.ConfigureHttpJsonOptions(opts =>
+        {
+            var a2aResolver = A2AJsonUtilities.DefaultOptions.TypeInfoResolver;
+            if (a2aResolver is not null)
+                opts.SerializerOptions.TypeInfoResolverChain.Add(a2aResolver);
+
+            opts.SerializerOptions.TypeInfoResolverChain.Add(GatewayJsonContext.Default);
+            opts.SerializerOptions.TypeInfoResolverChain.Add(CoreJsonContext.Default);
+        });
+        builder.Services.AddSingleton<IOptions<MafOptions>>(_ => Options.Create(options));
+        builder.Services.AddOpenClawA2AServices();
+        builder.Services.AddSingleton(bridge ?? new FakeExecutionBridge());
+
+        var app = builder.Build();
+        app.MapOpenClawA2AEndpoints(CreateStartupContext(), runtime: null!);
+        await app.StartAsync();
+        return app;
+    }
+
+    private static async Task<System.Net.Http.HttpResponseMessage> PostHttpStreamingMessageAsync(System.Net.Http.HttpClient client, SendMessageRequest request)
+    {
+        using var message = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, "/a2a/message:stream")
+        {
+            Content = JsonContent.Create(request, options: A2AJsonUtilities.DefaultOptions)
+        };
+
+        return await client.SendAsync(message);
+    }
+
+    private static async Task<System.Net.Http.HttpResponseMessage> PostJsonRpcStreamingMessageAsync(System.Net.Http.HttpClient client, SendMessageRequest request)
+    {
+        var jsonRpcRequest = new JsonRpcRequest
+        {
+            JsonRpc = "2.0",
+            Id = 1,
+            Method = A2AMethods.SendStreamingMessage,
+            Params = JsonSerializer.SerializeToElement(request, A2AJsonUtilities.DefaultOptions)
+        };
+
+        using var message = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, "/a2a/rpc")
+        {
+            Content = new JsonRpcContent(jsonRpcRequest)
+        };
+
+        return await client.SendAsync(message);
+    }
+
+    private static async Task<List<StreamResponse>> ReadStreamResponsesAsync(System.Net.Http.HttpResponseMessage response)
+    {
+        var payload = await response.Content.ReadAsStringAsync();
+        var events = new List<StreamResponse>();
+        using var reader = new StringReader(payload);
+        string? line;
+        while ((line = await reader.ReadLineAsync()) is not null)
+        {
+            if (!line.StartsWith("data: ", StringComparison.Ordinal))
+                continue;
+
+            var json = line[6..];
+            var streamResponse = JsonSerializer.Deserialize<StreamResponse>(json, A2AJsonUtilities.DefaultOptions);
+            Assert.NotNull(streamResponse);
+            events.Add(streamResponse!);
+        }
+
+        return events;
+    }
+
+    private static async Task<List<StreamResponse>> ReadJsonRpcStreamResponsesAsync(System.Net.Http.HttpResponseMessage response)
+    {
+        var payload = await response.Content.ReadAsStringAsync();
+        var events = new List<StreamResponse>();
+        using var reader = new StringReader(payload);
+        string? line;
+        while ((line = await reader.ReadLineAsync()) is not null)
+        {
+            if (!line.StartsWith("data: ", StringComparison.Ordinal))
+                continue;
+
+            using var document = JsonDocument.Parse(line[6..]);
+            if (!document.RootElement.TryGetProperty("result", out var result))
+                continue;
+
+            var streamResponse = JsonSerializer.Deserialize<StreamResponse>(result.GetRawText(), A2AJsonUtilities.DefaultOptions);
+            Assert.NotNull(streamResponse);
+            events.Add(streamResponse!);
+        }
+
+        return events;
+    }
+
     private sealed class FakeExecutionBridge : IOpenClawA2AExecutionBridge
     {
         public async Task ExecuteStreamingAsync(
@@ -395,6 +613,19 @@ public sealed class A2AIntegrationTests
             CancellationToken cancellationToken)
         {
             await onEvent(AgentStreamEvent.TextDelta($"bridge:{request.UserText}"), cancellationToken);
+            await onEvent(AgentStreamEvent.Complete(), cancellationToken);
+        }
+    }
+
+    private sealed class MultiDeltaExecutionBridge : IOpenClawA2AExecutionBridge
+    {
+        public async Task ExecuteStreamingAsync(
+            OpenClawA2AExecutionRequest request,
+            Func<AgentStreamEvent, CancellationToken, ValueTask> onEvent,
+            CancellationToken cancellationToken)
+        {
+            await onEvent(AgentStreamEvent.TextDelta("bridge:"), cancellationToken);
+            await onEvent(AgentStreamEvent.TextDelta(request.UserText), cancellationToken);
             await onEvent(AgentStreamEvent.Complete(), cancellationToken);
         }
     }
@@ -425,4 +656,3 @@ public sealed class A2AIntegrationTests
         }
     }
 }
-#endif

@@ -26,6 +26,8 @@ The project is aimed at .NET developers and operators who want a local or self-h
 | CLI | Stable local path | `start`, `setup`, `run`, `chat`, `models`, `maintenance`, `upgrade`, plugin, skill, and diagnostic commands are available. |
 | Companion | Supported with caveats | Builds with the solution and includes managed-gateway tests. Desktop release managers should still run the manual smoke checklist in [RELEASES.md](RELEASES.md). |
 | Native tools | Supported | Core native tools are first-party .NET tools with explicit path, network, and approval guardrails. |
+| Microsoft Agent Framework adapter | Supported optional backend | Included in normal gateway builds; use `Runtime.Orchestrator=maf` to opt in while `native` remains the default. |
+| Durable workflow backends | Supported optional delegation | `maf-durable-http` can delegate long-running workflow runs to external durable hosts without making normal agent turns durable. |
 | Model providers | Supported with provider setup | OpenAI, Claude, Gemini, Azure OpenAI, Ollama, and OpenAI-compatible endpoints are represented in the provider/config surface. |
 | NativeAOT | Supported/friendly | Runtime and gateway are designed for the AOT lane. Dynamic/plugin surfaces are explicitly separated where needed. |
 | OpenClaw compatibility | Practical compatibility | `SKILL.md`, ClawHub-style skill install, mainstream tool/service plugin APIs, and package discovery are supported. Full upstream API parity is not claimed. |
@@ -33,7 +35,6 @@ The project is aimed at .NET developers and operators who want a local or self-h
 ## Experimental Or Partial
 
 - JIT-only plugin surfaces such as dynamic channels, commands, hooks, provider registration, and native dynamic .NET plugins.
-- Microsoft Agent Framework adapter experiments.
 - Browser tool local execution when dynamic code or a non-local execution backend is not configured.
 - Companion UI behavior beyond the managed-gateway unit coverage; use the release smoke checklist before public desktop releases.
 - Full production signing/notarization polish for desktop archives.
@@ -98,7 +99,7 @@ OpenClaw.NET supports practical OpenClaw ecosystem reuse:
 - mainstream `api.registerTool()` and `api.registerService()` plugin surfaces
 - explicit diagnostics for unsupported plugin APIs
 
-OpenClaw.NET is not a full upstream OpenClaw clone. Unsupported or JIT-only surfaces fail fast instead of loading partially. See [COMPATIBILITY.md](COMPATIBILITY.md) for the canonical matrix.
+OpenClaw.NET is not a full upstream OpenClaw clone. Unsupported or JIT-only surfaces fail fast instead of loading partially. See [COMPATIBILITY.md](COMPATIBILITY.md) for the canonical compatibility guide and [CAPABILITY_MATRIX.md](CAPABILITY_MATRIX.md) for the compact core, optional, experimental, and JIT-only lane summary.
 
 ## Known Limitations
 
@@ -115,6 +116,8 @@ OpenClaw.NET is not a full upstream OpenClaw clone. Unsupported or JIT-only surf
 | --- | --- |
 | Run a real local gateway | [QUICKSTART.md](QUICKSTART.md) |
 | Understand repository shape | [GETTING_STARTED.md](GETTING_STARTED.md) |
+| Understand OpenSquilla-style turn routing | [opensquilla-dynamic-turn-routing.md](opensquilla-dynamic-turn-routing.md) |
+| Check capability lanes | [CAPABILITY_MATRIX.md](CAPABILITY_MATRIX.md) |
 | Check compatibility | [COMPATIBILITY.md](COMPATIBILITY.md) |
 | Use tools and skills | [USER_GUIDE.md](USER_GUIDE.md) and [TOOLS_GUIDE.md](TOOLS_GUIDE.md) |
 | Download desktop bundles | [RELEASES.md](RELEASES.md) |

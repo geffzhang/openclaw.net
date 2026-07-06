@@ -21,6 +21,7 @@ using OpenClaw.Gateway.Composition;
 using OpenClaw.Gateway.Extensions;
 using OpenClaw.Gateway.Integrations;
 using OpenClaw.Gateway.Pipeline;
+using OpenClaw.Gateway.Tools;
 using OpenClaw.Payments.Core;
 using Xunit;
 
@@ -58,8 +59,8 @@ public sealed class GatewayRuntimeLifecycleTests
                 return ValueTask.CompletedTask;
             });
 
-            await coordinator.StopAsync(CancellationToken.None);
-            await coordinator.StopAsync(CancellationToken.None);
+            await coordinator.StopAsync(TestContext.Current.CancellationToken);
+            await coordinator.StopAsync(TestContext.Current.CancellationToken);
 
             Assert.Equal(["second", "first"], calls);
         }
@@ -125,7 +126,7 @@ public sealed class GatewayRuntimeLifecycleTests
             });
 
             var service = new SkillWatcherService(config, null, [], agentRuntime, NullLogger<SkillWatcherService>.Instance);
-            service.Start(CancellationToken.None);
+            service.Start(TestContext.Current.CancellationToken);
             service.NotifySkillChanged();
 
             await reloadStarted.Task.WaitAsync(TimeSpan.FromSeconds(3));
@@ -180,6 +181,56 @@ public sealed class GatewayRuntimeLifecycleTests
             stoppingCts.Cancel();
             await reloadCanceled.Task.WaitAsync(TimeSpan.FromSeconds(3));
             await service.DisposeAsync();
+        }
+        finally
+        {
+            DeleteDirectoryIfPresent(root);
+        }
+    }
+
+    [Fact]
+    public async Task SkillWatcherService_OnSkillsReloaded_Callback_ReceivesReloadedSkills()
+    {
+        var root = CreateTempRoot();
+        Directory.CreateDirectory(root);
+        try
+        {
+            var skillsRoot = Path.Combine(root, "skills");
+            Directory.CreateDirectory(skillsRoot);
+
+            var config = new SkillsConfig();
+            config.Load.ExtraDirs = [skillsRoot];
+
+            var reloadedSkills = new List<SkillDefinition>
+            {
+                new()
+                {
+                    Name = "reloaded-skill",
+                    Description = "A reloaded skill",
+                    Instructions = "Reloaded body.",
+                    Location = Path.Combine(skillsRoot, "reloaded-skill")
+                }
+            };
+
+            var agentRuntime = Substitute.For<IAgentRuntime>();
+            agentRuntime.CircuitBreakerState.Returns(CircuitState.Closed);
+            agentRuntime.LoadedSkillNames.Returns(["reloaded-skill"]);
+            agentRuntime.LoadedSkills.Returns(reloadedSkills);
+            agentRuntime.ReloadSkillsAsync(Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult<IReadOnlyList<string>>(["reloaded-skill"]));
+
+            var callbackFired = new TaskCompletionSource<IReadOnlyList<SkillDefinition>>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            var service = new SkillWatcherService(config, null, [], agentRuntime,
+                NullLogger<SkillWatcherService>.Instance,
+                onSkillsReloaded: skills => callbackFired.TrySetResult(skills));
+            service.Start(TestContext.Current.CancellationToken);
+            service.NotifySkillChanged();
+
+            var received = await callbackFired.Task.WaitAsync(TimeSpan.FromSeconds(3));
+            Assert.Single(received);
+            Assert.Equal("reloaded-skill", received[0].Name);
+            Assert.Equal("Reloaded body.", received[0].Instructions);
         }
         finally
         {
@@ -256,8 +307,8 @@ public sealed class GatewayRuntimeLifecycleTests
                 return Task.FromResult((0, string.Empty));
             });
 
-        await service.StartAsync(CancellationToken.None);
-        await service.StartAsync(CancellationToken.None);
+        await service.StartAsync(TestContext.Current.CancellationToken);
+        await service.StartAsync(TestContext.Current.CancellationToken);
         await service.DisposeAsync();
         await service.DisposeAsync();
 
@@ -394,6 +445,7 @@ public sealed class GatewayRuntimeLifecycleTests
             PluginHost = null,
             NativeDynamicPluginHost = null,
             WhatsAppWorkerHost = null,
+            ArtifactRuntime = new SkillArtifactRuntime(),
             RegisteredToolNames = FrozenSet<string>.Empty,
             ChannelAuthEvents = new ChannelAuthEventStore()
         };
