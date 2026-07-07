@@ -9,6 +9,7 @@ using OpenClaw.Agent.Goal;
 using OpenClaw.Agent.Memory;
 using OpenClaw.Agent.Plugins;
 using OpenClaw.Agent.Routing;
+using OpenClaw.Agent.ToolDeclarations;
 using OpenClaw.Agent.Tools;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.ExternalCli;
@@ -189,6 +190,7 @@ internal static class CoreServicesExtensions
         services.AddSingleton<LiveSessionService>();
         services.AddSingleton<ToolPresetResolver>();
         services.AddSingleton<IToolPresetResolver>(sp => sp.GetRequiredService<ToolPresetResolver>());
+        services.AddSingleton<IToolDeclarationReducer, RuleBasedToolDeclarationReducer>();
         services.AddSingleton(sp =>
             new ToolExecutionRouter(
                 config,

@@ -130,7 +130,8 @@ public sealed class AgentRuntime : IAgentRuntime
         ContextBudgetPlanner? contextBudgetPlanner = null,
         ITurnRoutingPolicy? turnRoutingPolicy = null,
         IGoalService? goalService = null,
-        IReadOnlyList<IToolResultInterceptor>? interceptors = null)
+        IReadOnlyList<IToolResultInterceptor>? interceptors = null,
+        IToolDeclarationReducer? toolDeclarationReducer = null)
     {
         _chatClient = chatClient;
         _tools = tools;
@@ -183,6 +184,7 @@ public sealed class AgentRuntime : IAgentRuntime
             toolUsageTracker: toolUsageTracker,
             executionRouter: executionRouter,
             toolPresetResolver: toolPresetResolver,
+            toolDeclarationReducer: toolDeclarationReducer,
             redaction: _redaction,
             sentinelSubstitution: _sentinelSubstitution,
             toolGovernance: toolGovernance,
@@ -363,7 +365,7 @@ public sealed class AgentRuntime : IAgentRuntime
             ModelId = session.ModelOverride ?? _config.Model,
             MaxOutputTokens = _maxTokens,
             Temperature = _temperature,
-            Tools = _toolExecutor.GetToolDeclarations(session),
+            Tools = _toolExecutor.GetToolDeclarations(session, userMessage),
             ResponseFormat = responseSchema.HasValue
                 ? ChatResponseFormat.ForJsonSchema(responseSchema.Value, "response")
                 : null
@@ -670,7 +672,7 @@ public sealed class AgentRuntime : IAgentRuntime
             ModelId = session.ModelOverride ?? _config.Model,
             MaxOutputTokens = _maxTokens,
             Temperature = _temperature,
-            Tools = _toolExecutor.GetToolDeclarations(session)
+            Tools = _toolExecutor.GetToolDeclarations(session, userMessage)
         };
 
         if (!string.IsNullOrWhiteSpace(session.ReasoningEffort))
@@ -2191,7 +2193,10 @@ public sealed class AgentRuntime : IAgentRuntime
             ModelId = session.ModelOverride ?? _config.Model,
             MaxOutputTokens = _maxTokens,
             Temperature = _temperature,
-            Tools = _toolExecutor.GetToolDeclarations(session),
+            Tools = _toolExecutor.GetToolDeclarations(
+                session,
+                userMessage,
+                new ToolDeclarationReductionRequest { IsTurnRoutingProbe = true }),
             ResponseFormat = responseSchema.HasValue
                 ? ChatResponseFormat.ForJsonSchema(responseSchema.Value, "response")
                 : null

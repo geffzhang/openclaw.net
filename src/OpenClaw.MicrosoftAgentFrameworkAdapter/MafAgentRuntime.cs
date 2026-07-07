@@ -88,6 +88,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
             toolUsageTracker: context.ToolUsageTracker,
             executionRouter: context.Services.GetService(typeof(OpenClaw.Agent.Execution.ToolExecutionRouter)) as OpenClaw.Agent.Execution.ToolExecutionRouter,
             toolPresetResolver: context.Services.GetService(typeof(IToolPresetResolver)) as IToolPresetResolver,
+            toolDeclarationReducer: context.Services.GetService(typeof(IToolDeclarationReducer)) as IToolDeclarationReducer,
             auditLog: context.ToolAuditLog,
             toolGovernance: context.ToolGovernance,
             interceptors: context.Interceptors,
@@ -602,7 +603,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
 
     private ChatClientAgent CreateAgent(Session session, string? userMessage = null)
     {
-        var tools = _toolExecutor.GetToolDeclarations(session)
+        var tools = _toolExecutor.GetToolDeclarations(session, userMessage)
             .Select(tool => _mafToolsByName[tool.Name])
             .ToArray();
         return _agentFactory.Create(_chatClient, GetSystemPrompt(session, userMessage), tools);
@@ -889,7 +890,10 @@ public sealed class MafAgentRuntime : IAgentRuntime
         CancellationToken ct)
     {
         var baseOptions = CreateChatOptions(session, responseSchema);
-        baseOptions.Tools = _toolExecutor.GetToolDeclarations(session);
+        baseOptions.Tools = _toolExecutor.GetToolDeclarations(
+            session,
+            userMessage,
+            new ToolDeclarationReductionRequest { IsTurnRoutingProbe = true });
 
         var decision = await _turnRoutingPolicy.ResolveAsync(new TurnRoutingRequest
         {
