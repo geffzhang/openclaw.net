@@ -74,6 +74,41 @@ public class AgentRuntimeTests
     }
 
     [Fact]
+    public async Task RunAsync_DeclarationReductionEnabled_ReducesToolsBeforeModelCall_And_ForwardsUserMessage()
+    {
+        ChatOptions? capturedOptions = null;
+        var reducer = new RecordingToolDeclarationReducer(["read_file"]);
+        var gatewayConfig = new GatewayConfig();
+        gatewayConfig.Tooling.DeclarationReduction.Enabled = true;
+
+        _chatClient.GetResponseAsync(
+            Arg.Any<IList<ChatMessage>>(),
+            Arg.Do<ChatOptions>(options => capturedOptions = options),
+            Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ChatResponse(new[] { new ChatMessage(ChatRole.Assistant, "ok") })));
+
+        var agent = new AgentRuntime(
+            _chatClient,
+            [new CountingTool("read_file", "file result"), new CountingTool("shell", "shell result")],
+            _memory,
+            _config,
+            maxHistoryTurns: 5,
+            gatewayConfig: gatewayConfig,
+            toolDeclarationReducer: reducer);
+
+        await agent.RunAsync(
+            new Session { Id = "sess-reduction", SenderId = "user1", ChannelId = "test-channel" },
+            "read the repo file",
+            TestContext.Current.CancellationToken);
+
+        Assert.NotNull(capturedOptions);
+        Assert.Equal(["read_file"], capturedOptions!.Tools!.Select(tool => tool.Name).ToArray());
+
+        var modelCallContext = Assert.Single(reducer.Contexts, static context => !context.IsTurnRoutingProbe);
+        Assert.Equal("read the repo file", modelCallContext.UserMessage);
+    }
+
+    [Fact]
     public async Task RunAsync_TurnRoutingPolicy_FiltersTools_And_AppendsScopedPrompt()
     {
         IList<ChatMessage>? capturedMessages = null;
@@ -129,6 +164,57 @@ public class AgentRuntimeTests
         Assert.Equal("frontier-tools", session.ModelProfileId);
         Assert.Equal("T1", session.RouteModelTier);
         Assert.Null(session.RouteReason);
+    }
+
+    [Fact]
+    public async Task RunAsync_TurnRoutingProbe_UsesReductionAwareDeclarations_ForRoutingPolicy()
+    {
+        var reducer = new RecordingToolDeclarationReducer(["shell"]);
+        var gatewayConfig = new GatewayConfig();
+        gatewayConfig.Tooling.DeclarationReduction.Enabled = true;
+        TurnRoutingRequest? capturedRequest = null;
+
+        _chatClient.GetResponseAsync(
+            Arg.Any<IList<ChatMessage>>(),
+            Arg.Any<ChatOptions>(),
+            Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ChatResponse(new[] { new ChatMessage(ChatRole.Assistant, "ok") })));
+
+        var routing = Substitute.For<ITurnRoutingPolicy>();
+        routing.ResolveAsync(Arg.Any<TurnRoutingRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                capturedRequest = call.Arg<TurnRoutingRequest>();
+                return new TurnRoutingDecision { Tier = "T1", Reason = "probe" };
+            });
+
+        var agent = new AgentRuntime(
+            _chatClient,
+            [new CountingTool("read_file", "file result"), new CountingTool("shell", "shell result")],
+            _memory,
+            _config,
+            maxHistoryTurns: 5,
+            gatewayConfig: gatewayConfig,
+            turnRoutingPolicy: routing,
+            toolDeclarationReducer: reducer);
+
+        await agent.RunAsync(
+            new Session { Id = "sess-routing-probe", SenderId = "user1", ChannelId = "test-channel" },
+            "route this turn",
+            TestContext.Current.CancellationToken);
+
+        Assert.NotNull(capturedRequest);
+        Assert.Equal(["shell"], capturedRequest!.BaseOptions.Tools!.Select(tool => tool.Name).ToArray());
+
+        var probeContext = Assert.Single(reducer.Contexts, static context => context.IsTurnRoutingProbe);
+        Assert.Equal("route this turn", probeContext.UserMessage);
+        Assert.Equal(["shell"], probeContext.CandidateTools
+            .Where(tool => capturedRequest.BaseOptions.Tools!.Any(selected => selected.Name == tool.Name))
+            .Select(tool => tool.Name)
+            .ToArray());
+
+        var modelCallContext = Assert.Single(reducer.Contexts, static context => !context.IsTurnRoutingProbe);
+        Assert.Equal("route this turn", modelCallContext.UserMessage);
     }
 
     [Fact]
@@ -3122,6 +3208,34 @@ public class AgentRuntimeTests
         {
             _ = ct;
             return ValueTask.FromResult(argumentsJson);
+        }
+    }
+
+    private sealed class RecordingToolDeclarationReducer(string[] selectedNames) : IToolDeclarationReducer
+    {
+        public List<ToolDeclarationReductionContext> Contexts { get; } = [];
+
+        public ValueTask<ToolDeclarationReductionResult> ReduceAsync(ToolDeclarationReductionContext context, CancellationToken ct)
+        {
+            _ = ct;
+            Contexts.Add(context);
+            var selected = context.CandidateTools
+                .Where(tool => selectedNames.Contains(tool.Name, StringComparer.Ordinal))
+                .ToArray();
+            return ValueTask.FromResult(new ToolDeclarationReductionResult
+            {
+                Tools = selected,
+                Diagnostics = new ToolDeclarationReductionDiagnostics
+                {
+                    Enabled = true,
+                    Mode = "test",
+                    CandidateCount = context.CandidateTools.Count,
+                    SelectedCount = selected.Length,
+                    MaxTools = context.Config.MaxTools,
+                    HardMaxTools = context.Config.HardMaxTools,
+                    SelectedTools = selected.Select(static tool => tool.Name).ToArray()
+                }
+            });
         }
     }
 
