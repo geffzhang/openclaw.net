@@ -1,0 +1,6 @@
+{
+  "id": "tool-declaration-reduction-semantic",
+  "type": "OpenClaw.Plugins.ToolDeclarationReduction.Semantic.SemanticToolDeclarationReductionPlugin, OpenClaw.Plugins.ToolDeclarationReduction.Semantic",
+  "capabilities": ["hooks"],
+  "description": "Self-contained semantic/hybrid tool declaration reducer."
+}

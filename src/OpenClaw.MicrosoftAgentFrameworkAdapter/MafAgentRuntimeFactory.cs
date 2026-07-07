@@ -72,7 +72,8 @@ public sealed class MafAgentRuntimeFactory : IAgentRuntimeFactory
             IsContractRuntimeBudgetExceeded = context.IsContractRuntimeBudgetExceeded,
             RecordContractTurnUsage = context.RecordContractTurnUsage,
             AppendContractSnapshot = context.AppendContractSnapshot,
-            Interceptors = context.Interceptors
+            Interceptors = context.Interceptors,
+            ToolDeclarationReducer = context.ToolDeclarationReducer
         });
 
     private static GatewayConfig CreateDelegatedConfig(
@@ -168,7 +169,8 @@ public sealed class MafAgentRuntimeFactory : IAgentRuntimeFactory
             IsContractRuntimeBudgetExceeded = context.IsContractRuntimeBudgetExceeded,
             RecordContractTurnUsage = context.RecordContractTurnUsage,
             AppendContractSnapshot = context.AppendContractSnapshot,
-            Interceptors = context.Interceptors
+            Interceptors = context.Interceptors,
+            ToolDeclarationReducer = context.ToolDeclarationReducer
         });
     }
 }

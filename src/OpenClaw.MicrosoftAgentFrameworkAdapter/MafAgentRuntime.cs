@@ -88,7 +88,8 @@ public sealed class MafAgentRuntime : IAgentRuntime
             toolUsageTracker: context.ToolUsageTracker,
             executionRouter: context.Services.GetService(typeof(OpenClaw.Agent.Execution.ToolExecutionRouter)) as OpenClaw.Agent.Execution.ToolExecutionRouter,
             toolPresetResolver: context.Services.GetService(typeof(IToolPresetResolver)) as IToolPresetResolver,
-            toolDeclarationReducer: context.Services.GetService(typeof(IToolDeclarationReducer)) as IToolDeclarationReducer,
+            toolDeclarationReducer: context.ToolDeclarationReducer
+                ?? context.Services.GetService(typeof(IToolDeclarationReducer)) as IToolDeclarationReducer,
             auditLog: context.ToolAuditLog,
             toolGovernance: context.ToolGovernance,
             interceptors: context.Interceptors,

@@ -163,6 +163,11 @@ internal static partial class RuntimeInitializationExtensions
         };
 
         var (effectiveRequireToolApproval, effectiveApprovalRequiredTools) = ResolveApprovalMode(config);
+        var effectiveToolDeclarationReducer = SelectToolDeclarationReducer(
+            config.Tooling.DeclarationReduction,
+            app.Services.GetService<IToolDeclarationReducer>(),
+            pluginComposition.NativeDynamicPluginHost?.ToolDeclarationReducers ?? [],
+            startupLogger);
 
         var agentLogger = loggerFactory.CreateLogger("AgentRuntime");
         var orchestratorId = RuntimeOrchestrator.Normalize(config.Runtime.Orchestrator);
@@ -185,6 +190,7 @@ internal static partial class RuntimeInitializationExtensions
             effectiveRequireToolApproval,
             effectiveApprovalRequiredTools,
             services.ToolSandbox,
+            effectiveToolDeclarationReducer,
             interceptors);
         runtimeForLoadSkill = agentRuntime;
         if (agentRuntime is AgentRuntime concreteRuntime)

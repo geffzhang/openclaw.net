@@ -335,6 +335,7 @@ public sealed class MicrosoftExtensionsAiProviderBridgeTests : IDisposable
         public string PluginId => "test-meai-plugin";
         public JsonElement? Config { get; } = config;
         public ILogger Logger => NullLogger.Instance;
+        public IReadOnlyList<IToolDeclarationReducer> ToolDeclarationReducers => [];
         public List<(string ProviderId, string[] Models, IChatClient Client)> Providers { get; } = [];
 
         public void RegisterTool(ITool tool) { }
@@ -345,5 +346,6 @@ public sealed class MicrosoftExtensionsAiProviderBridgeTests : IDisposable
         public void RegisterHook(IToolHook hook) { }
         public void RegisterService(INativeDynamicPluginService service) { }
         public void RegisterResultInterceptor(IToolResultInterceptor interceptor) { }
+        public void RegisterToolDeclarationReducer(IToolDeclarationReducer reducer) { }
     }
 }

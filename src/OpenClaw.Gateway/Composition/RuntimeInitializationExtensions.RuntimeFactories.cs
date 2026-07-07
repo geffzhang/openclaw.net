@@ -306,6 +306,7 @@ internal static partial class RuntimeInitializationExtensions
         bool requireToolApproval,
         IReadOnlyList<string> approvalRequiredTools,
         IToolSandbox? toolSandbox,
+        IToolDeclarationReducer? toolDeclarationReducer,
         IReadOnlyList<IToolResultInterceptor>? interceptors = null)
     {
         var factory = AgentRuntimeFactorySelector.Select(
@@ -342,8 +343,44 @@ internal static partial class RuntimeInitializationExtensions
             IsContractRuntimeBudgetExceeded = contractGovernance.IsRuntimeBudgetExceeded,
             RecordContractTurnUsage = contractGovernance.RecordTurnUsage,
             AppendContractSnapshot = (session, status) => contractGovernance.AppendSnapshot(session, status),
-            Interceptors = interceptors
+            Interceptors = interceptors,
+            ToolDeclarationReducer = toolDeclarationReducer
         });
+    }
+
+    internal static IToolDeclarationReducer? SelectToolDeclarationReducer(
+        ToolDeclarationReductionConfig config,
+        IToolDeclarationReducer? ruleReducer,
+        IReadOnlyList<IToolDeclarationReducer> pluginReducers,
+        ILogger logger)
+    {
+        if (!config.Enabled || string.Equals(config.Mode, "off", StringComparison.OrdinalIgnoreCase))
+            return ruleReducer;
+
+        if (string.Equals(config.Mode, "rule", StringComparison.OrdinalIgnoreCase))
+            return ruleReducer;
+
+        if (string.Equals(config.Mode, "semantic", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(config.Mode, "hybrid", StringComparison.OrdinalIgnoreCase))
+        {
+            if (pluginReducers.Count > 0)
+                return pluginReducers[0];
+
+            if (config.FallbackToRuleWhenSemanticUnavailable)
+            {
+                logger.LogWarning(
+                    "Tool declaration reduction mode {Mode} requested but no semantic reducer plugin was registered; falling back to the rule reducer.",
+                    config.Mode);
+                return ruleReducer;
+            }
+
+            logger.LogWarning(
+                "Tool declaration reduction mode {Mode} requested but no semantic reducer plugin was registered; declaration reduction will proceed without a reducer.",
+                config.Mode);
+            return null;
+        }
+
+        return ruleReducer;
     }
 
     private static MiddlewarePipeline CreateMiddlewarePipeline(

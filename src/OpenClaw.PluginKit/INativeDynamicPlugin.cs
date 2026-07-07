@@ -18,6 +18,7 @@ public interface INativeDynamicPluginContext
     string PluginId { get; }
     JsonElement? Config { get; }
     ILogger Logger { get; }
+    IReadOnlyList<IToolDeclarationReducer> ToolDeclarationReducers { get; }
 
     void RegisterTool(ITool tool);
     void RegisterChannel(IChannelAdapter adapter);
@@ -27,6 +28,7 @@ public interface INativeDynamicPluginContext
     void RegisterHook(IToolHook hook);
     void RegisterService(INativeDynamicPluginService service);
     void RegisterResultInterceptor(IToolResultInterceptor interceptor);
+    void RegisterToolDeclarationReducer(IToolDeclarationReducer reducer);
 }
 
 public sealed class NativeDynamicMemoryProviderContext
