@@ -1,3 +1,5 @@
+using System.Text.Json;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
@@ -487,31 +489,37 @@ public sealed class OpenClawToolExecutorTests
     }
 
     [Fact]
-    public void GetToolDeclarations_WhenReductionEnabled_UsesReducer()
+    public void GetToolDeclarations_WhenReductionEnabled_FiltersDisallowedReducerOutput()
     {
-        var reducer = new FixedToolDeclarationReducer(["read_file"]);
         var config = new GatewayConfig();
         config.Tooling.DeclarationReduction.Enabled = true;
+        config.Tooling.Presets["read_only"] = new ToolPresetConfig
+        {
+            AllowTools = ["read_file"]
+        };
         var executor = CreateExecutor(
             [new RecordingTool("read_file", "ok"), new RecordingTool("shell", "ok")],
             config: config,
-            toolDeclarationReducer: reducer);
+            toolDeclarationReducer: new ReturningToolDeclarationReducer(["shell", "read_file"]));
 
-        var tools = executor.GetToolDeclarations(CreateSession(), "read a file");
+        var session = CreateSession();
+        session.RoutePresetId = "read_only";
+
+        var tools = executor.GetToolDeclarations(session, "read a file");
 
         Assert.Equal(["read_file"], tools.Select(static item => item.Name).ToArray());
-        Assert.Equal("read a file", reducer.LastContext?.UserMessage);
     }
 
     [Fact]
-    public void GetToolDeclarations_WhenReducerThrows_FailsOpenToPresetAllowedTools()
+    public void GetToolDeclarations_WhenReducerReturnsEmpty_FallsBackToPresetAllowedTools()
     {
         var config = new GatewayConfig();
         config.Tooling.DeclarationReduction.Enabled = true;
+        config.Tooling.DeclarationReduction.FallbackToPresetOnEmpty = true;
         var executor = CreateExecutor(
             [new RecordingTool("read_file", "ok"), new RecordingTool("shell", "ok")],
             config: config,
-            toolDeclarationReducer: new ThrowingToolDeclarationReducer());
+            toolDeclarationReducer: new EmptyToolDeclarationReducer());
 
         var tools = executor.GetToolDeclarations(CreateSession(), "read a file");
 
@@ -639,14 +647,14 @@ public sealed class OpenClawToolExecutorTests
         }
     }
 
-    private sealed class FixedToolDeclarationReducer(string[] selectedNames) : IToolDeclarationReducer
+    private sealed class ReturningToolDeclarationReducer(string[] selectedNames) : IToolDeclarationReducer
     {
-        public ToolDeclarationReductionContext? LastContext { get; private set; }
-
         public ValueTask<ToolDeclarationReductionResult> ReduceAsync(ToolDeclarationReductionContext context, CancellationToken ct)
         {
-            LastContext = context;
-            var selected = context.CandidateTools.Where(tool => selectedNames.Contains(tool.Name, StringComparer.Ordinal)).ToArray();
+            var selected = selectedNames
+                .Select(name => context.CandidateTools.FirstOrDefault(tool => string.Equals(tool.Name, name, StringComparison.Ordinal))
+                    ?? CreateSyntheticTool(name))
+                .ToArray();
             return ValueTask.FromResult(new ToolDeclarationReductionResult
             {
                 Tools = selected,
@@ -662,6 +670,30 @@ public sealed class OpenClawToolExecutorTests
                 }
             });
         }
+    }
+
+    private sealed class EmptyToolDeclarationReducer : IToolDeclarationReducer
+    {
+        public ValueTask<ToolDeclarationReductionResult> ReduceAsync(ToolDeclarationReductionContext context, CancellationToken ct)
+            => ValueTask.FromResult(new ToolDeclarationReductionResult
+            {
+                Tools = [],
+                Diagnostics = new ToolDeclarationReductionDiagnostics
+                {
+                    Enabled = true,
+                    Mode = "test",
+                    CandidateCount = context.CandidateTools.Count,
+                    SelectedCount = 0,
+                    MaxTools = context.Config.MaxTools,
+                    HardMaxTools = context.Config.HardMaxTools
+                }
+            });
+    }
+
+    private static AITool CreateSyntheticTool(string name)
+    {
+        using var schema = JsonDocument.Parse("""{"type":"object"}""");
+        return AIFunctionFactory.CreateDeclaration(name, name, schema.RootElement.Clone(), returnJsonSchema: null);
     }
 
     private sealed class ThrowingToolDeclarationReducer : IToolDeclarationReducer

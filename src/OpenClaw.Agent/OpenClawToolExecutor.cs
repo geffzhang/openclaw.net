@@ -144,8 +144,15 @@ public sealed class OpenClawToolExecutor
                 IsTurnRoutingProbe = request?.IsTurnRoutingProbe ?? false
             }, CancellationToken.None).AsTask().GetAwaiter().GetResult();
 
-            if (reduction.Tools.Count > 0 || !reductionConfig.FallbackToPresetOnEmpty)
-                return reduction.Tools.ToArray();
+            var allowedCandidateNames = candidates
+                .Select(static item => item.Name)
+                .ToHashSet(StringComparer.Ordinal);
+            var filteredTools = reduction.Tools
+                .Where(tool => allowedCandidateNames.Contains(tool.Name))
+                .ToArray();
+
+            if (filteredTools.Length > 0 || !reductionConfig.FallbackToPresetOnEmpty)
+                return filteredTools;
 
             _logger?.LogWarning("Tool declaration reduction returned no tools; falling back to {CandidateCount} preset-allowed tools.", candidates.Length);
             return candidates;
