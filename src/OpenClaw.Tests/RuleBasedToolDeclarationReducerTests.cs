@@ -128,6 +128,23 @@ public sealed class RuleBasedToolDeclarationReducerTests
     }
 
     [Fact]
+    public async Task ReduceAsync_RouteAllowlistUsesExactToolIdentity()
+    {
+        var reducer = new RuleBasedToolDeclarationReducer();
+        var tools = new[]
+        {
+            Tool("READ_FILE", "Read a file from disk", "path")
+        };
+        var context = Context(tools, "READ_FILE", maxTools: 1);
+        context.Session.RouteAllowedTools = ["read_file"];
+
+        var result = await reducer.ReduceAsync(context, TestContext.Current.CancellationToken);
+
+        Assert.Empty(result.Tools);
+        Assert.DoesNotContain(result.Diagnostics.SelectedTools, static name => string.Equals(name, "READ_FILE", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task ReduceAsync_NeverAutoIncludeBlocksScoredAndBackfillSelection()
     {
         var reducer = new RuleBasedToolDeclarationReducer();

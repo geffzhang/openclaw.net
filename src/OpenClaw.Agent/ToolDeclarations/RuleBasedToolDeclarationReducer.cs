@@ -7,7 +7,7 @@ namespace OpenClaw.Agent.ToolDeclarations;
 public sealed class RuleBasedToolDeclarationReducer : IToolDeclarationReducer
 {
     private static readonly string[] HighRiskTools = ["shell", "process", "write_file", "code_exec"];
-    private static readonly StringComparer ToolNameComparer = StringComparer.OrdinalIgnoreCase;
+    private static readonly StringComparer ToolNameComparer = StringComparer.Ordinal;
 
     public ValueTask<ToolDeclarationReductionResult> ReduceAsync(ToolDeclarationReductionContext context, CancellationToken ct)
     {
@@ -120,7 +120,7 @@ public sealed class RuleBasedToolDeclarationReducer : IToolDeclarationReducer
 
     private static bool IsAllowedByPreset(string toolName, ResolvedToolPreset? preset)
     {
-        return preset?.AllowedTools.Count is not > 0 || preset.AllowedTools.Contains(toolName);
+        return preset?.AllowedTools.Count is not > 0 || preset.AllowedTools.Any(allowedTool => string.Equals(allowedTool, toolName, StringComparison.Ordinal));
     }
 
     private static double Score(AITool tool, HashSet<string> promptTokens, ToolDeclarationReductionContext context)
@@ -138,7 +138,7 @@ public sealed class RuleBasedToolDeclarationReducer : IToolDeclarationReducer
         if (context.RecentToolFailures.TryGetValue(tool.Name, out var failures))
             score -= Math.Min(0.30, failures * 0.10);
 
-        if (HighRiskTools.Contains(tool.Name, StringComparer.OrdinalIgnoreCase) && !promptTokens.Contains(tool.Name))
+        if (HighRiskTools.Contains(tool.Name, StringComparer.Ordinal) && !promptTokens.Contains(tool.Name))
             score -= 0.08;
 
         return Math.Clamp(score, 0.0, 1.0);
