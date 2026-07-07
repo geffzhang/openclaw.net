@@ -1,11 +1,16 @@
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using NSubstitute;
 using System.Text.Json;
+using OpenClaw.Agent;
 using OpenClaw.Agent.Routing;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Observability;
 using OpenClaw.Core.Plugins;
+using OpenClaw.Core.Skills;
 using OpenClaw.Gateway;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Composition;
@@ -223,6 +228,83 @@ public sealed class CoreServicesExtensionsTests
             Assert.Same(config.Learning, provider.GetRequiredService<LearningConfig>());
             Assert.NotNull(provider.GetRequiredService<LearningService>());
             Assert.NotNull(provider.GetRequiredService<ISessionAdminStore>());
+        }
+        finally
+        {
+            DeleteDirectoryIfPresent(tempPath);
+        }
+    }
+
+    [Fact]
+    public async Task AddOpenClawCoreServices_NativeAgentRuntimeFactory_ReducesToolsBeforeModelCall()
+    {
+        var tempPath = Path.Join(Path.GetTempPath(), "openclaw-core-services-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempPath);
+        try
+        {
+            var config = new GatewayConfig
+            {
+                Memory = new MemoryConfig
+                {
+                    StoragePath = tempPath
+                },
+                Llm = new LlmProviderConfig
+                {
+                    Provider = "test-native",
+                    Model = "native-test-model"
+                }
+            };
+            config.Tooling.DeclarationReduction.Enabled = true;
+            config.Tooling.DeclarationReduction.MaxTools = 1;
+            config.Tooling.DeclarationReduction.HardMaxTools = 1;
+
+            var startup = new GatewayStartupContext
+            {
+                Config = config,
+                RuntimeState = new GatewayRuntimeState
+                {
+                    RequestedMode = "jit",
+                    EffectiveMode = GatewayRuntimeMode.Jit,
+                    DynamicCodeSupported = true
+                },
+                IsNonLoopbackBind = false
+            };
+
+            var services = new ServiceCollection();
+            services.AddLogging();
+            services.AddOptions();
+            services.AddOpenClawCoreServices(startup);
+
+            await using var provider = services.BuildServiceProvider();
+
+            var llmExecutionService = new CapturingLlmExecutionService();
+            var runtime = Assert.IsType<AgentRuntime>(new NativeAgentRuntimeFactory().Create(new AgentRuntimeFactoryContext
+            {
+                Services = provider,
+                Config = config,
+                RuntimeState = startup.RuntimeState,
+                ChatClient = Substitute.For<IChatClient>(),
+                Tools = [new SimpleTool("read_file"), new SimpleTool("shell")],
+                MemoryStore = provider.GetRequiredService<IMemoryStore>(),
+                RuntimeMetrics = provider.GetRequiredService<RuntimeMetrics>(),
+                ProviderUsage = provider.GetRequiredService<ProviderUsageTracker>(),
+                LlmExecutionService = llmExecutionService,
+                Skills = [],
+                SkillsConfig = new SkillsConfig(),
+                WorkspacePath = null,
+                PluginSkillDirs = [],
+                Logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("NativeAgentRuntimeFactoryTests"),
+                Hooks = [],
+                RequireToolApproval = false,
+                ApprovalRequiredTools = []
+            }));
+
+            await runtime.RunAsync(
+                new Session { Id = "sess-native-factory-reduction", SenderId = "user1", ChannelId = "test-channel" },
+                "read_file",
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal(["read_file"], llmExecutionService.LastToolNames);
         }
         finally
         {
@@ -591,6 +673,71 @@ public sealed class CoreServicesExtensionsTests
         public CancellationToken ApplicationStopped => TestContext.Current.CancellationToken;
         public void StopApplication()
         {
+        }
+    }
+
+    private sealed class SimpleTool(string name) : ITool
+    {
+        public string Name { get; } = name;
+        public string Description => $"Test tool {Name}";
+        public string ParameterSchema => """{"type":"object"}""";
+
+        public ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
+        {
+            _ = argumentsJson;
+            _ = ct;
+            return ValueTask.FromResult("ok");
+        }
+    }
+
+    private sealed class CapturingLlmExecutionService : ILlmExecutionService
+    {
+        public IReadOnlyList<string> LastToolNames { get; private set; } = [];
+
+        public CircuitState DefaultCircuitState => CircuitState.Closed;
+
+        public Task<LlmExecutionResult> GetResponseAsync(
+            Session session,
+            IReadOnlyList<ChatMessage> messages,
+            ChatOptions options,
+            TurnContext turnContext,
+            LlmExecutionEstimate estimate,
+            CancellationToken ct)
+        {
+            _ = session;
+            _ = messages;
+            _ = turnContext;
+            _ = estimate;
+            _ = ct;
+            LastToolNames = options.Tools?.Select(tool => tool.Name).OrderBy(name => name, StringComparer.Ordinal).ToArray() ?? [];
+            return Task.FromResult(new LlmExecutionResult
+            {
+                ProviderId = "test-native",
+                ModelId = "native-test-model",
+                Response = new ChatResponse([new ChatMessage(ChatRole.Assistant, "ok")])
+            });
+        }
+
+        public Task<LlmStreamingExecutionResult> StartStreamingAsync(
+            Session session,
+            IReadOnlyList<ChatMessage> messages,
+            ChatOptions options,
+            TurnContext turnContext,
+            LlmExecutionEstimate estimate,
+            CancellationToken ct)
+        {
+            _ = session;
+            _ = messages;
+            _ = options;
+            _ = turnContext;
+            _ = estimate;
+            _ = ct;
+            return Task.FromResult(new LlmStreamingExecutionResult
+            {
+                ProviderId = "test-native",
+                ModelId = "native-test-model",
+                Updates = AsyncEnumerable.Empty<ChatResponseUpdate>()
+            });
         }
     }
 }

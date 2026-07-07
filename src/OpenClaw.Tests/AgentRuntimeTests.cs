@@ -109,6 +109,46 @@ public class AgentRuntimeTests
     }
 
     [Fact]
+    public async Task RunStreamingAsync_DeclarationReductionEnabled_ReducesToolsBeforeStreamingModelCall_And_ForwardsUserMessage()
+    {
+        ChatOptions? capturedOptions = null;
+        var reducer = new RecordingToolDeclarationReducer(["read_file"]);
+        var gatewayConfig = new GatewayConfig();
+        gatewayConfig.Tooling.DeclarationReduction.Enabled = true;
+
+        _chatClient.GetStreamingResponseAsync(
+            Arg.Any<IList<ChatMessage>>(),
+            Arg.Do<ChatOptions>(options => capturedOptions = options),
+            Arg.Any<CancellationToken>())
+            .Returns(new[] { new ChatResponseUpdate(ChatRole.Assistant, "stream ok") }.ToAsyncEnumerable());
+
+        var agent = new AgentRuntime(
+            _chatClient,
+            [new CountingTool("read_file", "file result"), new CountingTool("shell", "shell result")],
+            _memory,
+            _config,
+            maxHistoryTurns: 5,
+            gatewayConfig: gatewayConfig,
+            toolDeclarationReducer: reducer);
+
+        var events = new List<AgentStreamEvent>();
+        await foreach (var evt in agent.RunStreamingAsync(
+            new Session { Id = "sess-stream-reduction", SenderId = "user1", ChannelId = "test-channel" },
+            "read the repo file",
+            TestContext.Current.CancellationToken))
+        {
+            events.Add(evt);
+        }
+
+        Assert.Contains(events, static evt => evt.Type == AgentStreamEventType.Done);
+        Assert.NotNull(capturedOptions);
+        Assert.Equal(["read_file"], capturedOptions!.Tools!.Select(tool => tool.Name).ToArray());
+
+        var modelCallContext = Assert.Single(reducer.Contexts, static context => !context.IsTurnRoutingProbe);
+        Assert.Equal("read the repo file", modelCallContext.UserMessage);
+    }
+
+    [Fact]
     public async Task RunAsync_TurnRoutingPolicy_FiltersTools_And_AppendsScopedPrompt()
     {
         IList<ChatMessage>? capturedMessages = null;
