@@ -158,6 +158,34 @@ public sealed class NativeDynamicPluginHostTests : IDisposable
     }
 
     [Fact]
+    public async Task LoadAsync_RetainsRegisteredToolDeclarationReducers()
+    {
+        var pluginDir = CreateNativePlugin(
+            "native-dynamic-semantic-reducer",
+            typeof(OpenClaw.Plugins.ToolDeclarationReduction.Semantic.SemanticToolDeclarationReductionPlugin).Assembly.Location,
+            typeof(OpenClaw.Plugins.ToolDeclarationReduction.Semantic.SemanticToolDeclarationReductionPlugin).FullName!,
+            ["hooks"]);
+
+        var config = new NativeDynamicPluginsConfig
+        {
+            Enabled = true,
+            Load = new PluginLoadConfig { Paths = [pluginDir] }
+        };
+
+        await using var host = new NativeDynamicPluginHost(
+            config,
+            RuntimeModeResolver.Resolve(new RuntimeConfig { Mode = "jit" }, dynamicCodeSupported: true),
+            new TestLogger());
+
+        await host.LoadAsync(null, TestContext.Current.CancellationToken);
+
+        Assert.Single(host.ToolDeclarationReducers);
+        Assert.Equal(
+            "OpenClaw.Plugins.ToolDeclarationReduction.Semantic.SemanticToolDeclarationReducer",
+            host.ToolDeclarationReducers[0].GetType().FullName);
+    }
+
+    [Fact]
     public async Task LoadAsync_AssemblyPathOutsideRoot_IsRejected()
     {
         var pluginDir = Path.Combine(_tempDir, "native-dynamic-escape");

@@ -3938,6 +3938,85 @@ public sealed class MafAdapterTests
         Assert.Equal(["allowed_tool"], llmExecutionService.LastStreamingToolNames);
     }
 
+    [Fact]
+    public async Task MafAgentRuntime_RunStreamingAsync_ReducesToolDeclarationsBeforeModelCall()
+    {
+        var reducer = new AllowOnlyDeclarationReducer("echo_tool");
+        var services = new ServiceCollection()
+            .AddSingleton<IToolDeclarationReducer>(reducer)
+            .BuildServiceProvider();
+        var executionService = new CapturingLlmExecutionService();
+        var storagePath = Path.Join(Path.GetTempPath(), "openclaw-maf-streaming-reduction-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+
+        try
+        {
+            var runtime = new MafAgentRuntime(
+                new AgentRuntimeFactoryContext
+                {
+                    Services = services,
+                    Config = new GatewayConfig
+                    {
+                        Tooling = new ToolingConfig
+                        {
+                            DeclarationReduction = new ToolDeclarationReductionConfig
+                            {
+                                Enabled = true,
+                                Mode = "rule",
+                                MaxTools = 1,
+                                HardMaxTools = 1
+                            }
+                        },
+                        Memory = new MemoryConfig { StoragePath = storagePath },
+                        Llm = new LlmProviderConfig { Provider = "test-maf", Model = "maf-test-model" }
+                    },
+                    RuntimeState = new GatewayRuntimeState
+                    {
+                        RequestedMode = "jit",
+                        EffectiveMode = GatewayRuntimeMode.Jit,
+                        DynamicCodeSupported = true
+                    },
+                    ChatClient = new MafTestChatClient(),
+                    Tools = [new TestTool("echo_tool"), new TestTool("shell")],
+                    MemoryStore = new FileMemoryStore(storagePath, 4),
+                    RuntimeMetrics = new RuntimeMetrics(),
+                    ProviderUsage = new ProviderUsageTracker(),
+                    LlmExecutionService = executionService,
+                    Skills = [],
+                    SkillsConfig = new SkillsConfig(),
+                    WorkspacePath = null,
+                    PluginSkillDirs = [],
+                    Logger = NullLogger.Instance,
+                    Hooks = [],
+                    RequireToolApproval = false,
+                    ApprovalRequiredTools = [],
+                    IsContractTokenBudgetExceeded = null,
+                    IsContractRuntimeBudgetExceeded = null,
+                    RecordContractTurnUsage = null,
+                    AppendContractSnapshot = null
+                },
+                new MafOptions { EnableStreaming = true },
+                new MafAgentFactory(Options.Create(new MafOptions()), NullLoggerFactory.Instance, services),
+                new MafSessionStateStore(
+                    new GatewayConfig { Memory = new MemoryConfig { StoragePath = storagePath } },
+                    Options.Create(new MafOptions()),
+                    NullLogger<MafSessionStateStore>.Instance),
+                new MafTelemetryAdapter(),
+                NullLogger<MafAgentRuntime>.Instance);
+
+            var events = new List<AgentStreamEvent>();
+            await foreach (var evt in runtime.RunStreamingAsync(CreateSession("maf-streaming-reduction"), "use echo tool", TestContext.Current.CancellationToken))
+                events.Add(evt);
+
+            Assert.NotEmpty(events);
+            Assert.Equal(["echo_tool"], executionService.LastStreamingToolNames);
+        }
+        finally
+        {
+            Directory.Delete(storagePath, recursive: true);
+        }
+    }
+
     private static MafAgentRuntime CreateRuntime(
         string storagePath,
         ILlmExecutionService executionService,
