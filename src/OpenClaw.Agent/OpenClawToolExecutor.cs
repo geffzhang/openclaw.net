@@ -126,6 +126,9 @@ public sealed class OpenClawToolExecutor
             .Where(item => IsToolAllowedForSession(session, item.Name, preset))
             .ToArray();
         var governanceEnabled = _config.Governance.Enabled;
+        var governanceAllowedCandidates = governanceEnabled
+            ? FilterToolDeclarationsByGovernance(session, candidates)
+            : candidates;
 
         var reductionConfig = _config.Tooling.DeclarationReduction;
         if (!reductionConfig.Enabled || string.Equals(reductionConfig.Mode, "off", StringComparison.OrdinalIgnoreCase) || _toolDeclarationReducer is null)
@@ -151,9 +154,6 @@ public sealed class OpenClawToolExecutor
                 .Where(static tool => tool is not null)
                 .Cast<AITool>()
                 .ToArray();
-            var governanceAllowedCandidates = governanceEnabled
-                ? FilterToolDeclarationsByGovernance(session, candidates)
-                : candidates;
             var filteredTools = governanceEnabled
                 ? FilterToolDeclarationsByGovernance(session, reducedTools)
                 : reducedTools;
@@ -166,8 +166,8 @@ public sealed class OpenClawToolExecutor
         }
         catch (Exception ex)
         {
-            _logger?.LogWarning(ex, "Tool declaration reduction failed; falling back to {CandidateCount} preset-allowed tools.", candidates.Length);
-            return candidates;
+            _logger?.LogWarning(ex, "Tool declaration reduction failed; falling back to {CandidateCount} preset-allowed tools after governance filtering.", governanceAllowedCandidates.Length);
+            return governanceAllowedCandidates;
         }
     }
 

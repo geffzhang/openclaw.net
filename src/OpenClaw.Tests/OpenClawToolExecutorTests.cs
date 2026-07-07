@@ -544,6 +544,26 @@ public sealed class OpenClawToolExecutorTests
     }
 
     [Fact]
+    public void GetToolDeclarations_WhenReducerThrowsAndGovernanceDeniesTool_FallsBackToGovernanceAllowedCandidates()
+    {
+        var config = new GatewayConfig();
+        config.Tooling.DeclarationReduction.Enabled = true;
+        config.Governance.Enabled = true;
+        var executor = CreateExecutor(
+            [new RecordingTool("read_file", "ok"), new RecordingTool("shell", "ok")],
+            config: config,
+            toolDeclarationReducer: new ThrowingToolDeclarationReducer(),
+            toolGovernance: new FakeToolGovernanceService(new Dictionary<string, GovernanceDecision>(StringComparer.Ordinal)
+            {
+                ["shell"] = new() { Allowed = false, Action = GovernanceAction.Deny, Reason = "denied" }
+            }));
+
+        var tools = executor.GetToolDeclarations(CreateSession(), "read a file");
+
+        Assert.Equal(["read_file"], tools.Select(static item => item.Name).ToArray());
+    }
+
+    [Fact]
     public void GetToolDeclarations_WhenReducerReturnsEmpty_FallsBackToPresetAllowedTools()
     {
         var config = new GatewayConfig();
