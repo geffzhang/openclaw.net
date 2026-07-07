@@ -565,6 +565,85 @@ public sealed class MafAdapterTests
     }
 
     [Fact]
+    public async Task MafAgentRuntime_ForwardsUserMessageToDeclarationReducer()
+    {
+        var reducer = new RecordingDeclarationReducer("echo_tool");
+        var services = new ServiceCollection()
+            .AddSingleton<IToolDeclarationReducer>(reducer)
+            .BuildServiceProvider();
+        var executionService = new CapturingLlmExecutionService();
+        var storagePath = Path.Join(Path.GetTempPath(), "openclaw-maf-declaration-reduction-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+
+        try
+        {
+            var runtime = new MafAgentRuntime(
+                new AgentRuntimeFactoryContext
+                {
+                    Services = services,
+                    Config = new GatewayConfig
+                    {
+                        Tooling = new ToolingConfig
+                        {
+                            DeclarationReduction = new ToolDeclarationReductionConfig
+                            {
+                                Enabled = true,
+                                Mode = "rule",
+                                MaxTools = 1,
+                                HardMaxTools = 1
+                            }
+                        },
+                        Memory = new MemoryConfig { StoragePath = storagePath },
+                        Llm = new LlmProviderConfig { Provider = "test-maf", Model = "maf-test-model" }
+                    },
+                    RuntimeState = new GatewayRuntimeState
+                    {
+                        RequestedMode = "jit",
+                        EffectiveMode = GatewayRuntimeMode.Jit,
+                        DynamicCodeSupported = true
+                    },
+                    ChatClient = new MafTestChatClient(),
+                    Tools = [new TestTool("echo_tool"), new TestTool("shell")],
+                    MemoryStore = new FileMemoryStore(storagePath, 4),
+                    RuntimeMetrics = new RuntimeMetrics(),
+                    ProviderUsage = new ProviderUsageTracker(),
+                    LlmExecutionService = executionService,
+                    Skills = [],
+                    SkillsConfig = new SkillsConfig(),
+                    WorkspacePath = null,
+                    PluginSkillDirs = [],
+                    Logger = NullLogger.Instance,
+                    Hooks = [],
+                    RequireToolApproval = false,
+                    ApprovalRequiredTools = [],
+                    IsContractTokenBudgetExceeded = null,
+                    IsContractRuntimeBudgetExceeded = null,
+                    RecordContractTurnUsage = null,
+                    AppendContractSnapshot = null
+                },
+                new MafOptions(),
+                new MafAgentFactory(Options.Create(new MafOptions()), NullLoggerFactory.Instance, services),
+                new MafSessionStateStore(
+                    new GatewayConfig { Memory = new MemoryConfig { StoragePath = storagePath } },
+                    Options.Create(new MafOptions()),
+                    NullLogger<MafSessionStateStore>.Instance),
+                new MafTelemetryAdapter(),
+                NullLogger<MafAgentRuntime>.Instance);
+
+            const string userMessage = "use echo tool with this exact text";
+            await runtime.RunAsync(CreateSession("maf-declaration-reduction-user-message"), userMessage, TestContext.Current.CancellationToken);
+
+            Assert.Equal(["echo_tool"], executionService.LastToolNames);
+            var modelCallContext = Assert.Single(reducer.Contexts, static context => !context.IsTurnRoutingProbe);
+            Assert.Equal(userMessage, modelCallContext.UserMessage);
+        }
+        finally
+        {
+            Directory.Delete(storagePath, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task MafAgentRuntime_AppliesTurnRoutingPolicy_AndRestoresSessionRouteState()
     {
         var routing = Substitute.For<ITurnRoutingPolicy>();
@@ -666,6 +745,118 @@ public sealed class MafAdapterTests
             Assert.Equal("concise", session.ResponseMode);
             Assert.Equal("T1", session.RouteModelTier);
             Assert.Null(session.RouteReason);
+        }
+        finally
+        {
+            Directory.Delete(storagePath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task MafAgentRuntime_TurnRoutingProbe_UsesReducedTools()
+    {
+        var reducer = new RecordingDeclarationReducer("echo_tool");
+        TurnRoutingRequest? capturedRequest = null;
+        var routing = Substitute.For<ITurnRoutingPolicy>();
+        routing.ResolveAsync(Arg.Any<TurnRoutingRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                capturedRequest = call.Arg<TurnRoutingRequest>();
+                return new TurnRoutingDecision
+                {
+                    Tier = "T1",
+                    AllowedTools = ["echo_tool"],
+                    Reason = "reduced_probe"
+                };
+            });
+
+        var services = new ServiceCollection()
+            .AddSingleton<IToolDeclarationReducer>(reducer)
+            .AddSingleton(routing)
+            .BuildServiceProvider();
+        var executionService = new CapturingLlmExecutionService();
+        var storagePath = Path.Join(Path.GetTempPath(), "openclaw-maf-routing-reduction-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+
+        try
+        {
+            var runtime = new MafAgentRuntime(
+                new AgentRuntimeFactoryContext
+                {
+                    Services = services,
+                    Config = new GatewayConfig
+                    {
+                        Tooling = new ToolingConfig
+                        {
+                            DeclarationReduction = new ToolDeclarationReductionConfig
+                            {
+                                Enabled = true,
+                                Mode = "rule",
+                                MaxTools = 1,
+                                HardMaxTools = 1
+                            }
+                        },
+                        Memory = new MemoryConfig
+                        {
+                            StoragePath = storagePath
+                        },
+                        Llm = new LlmProviderConfig
+                        {
+                            Provider = "test-maf",
+                            Model = "maf-test-model"
+                        }
+                    },
+                    RuntimeState = new GatewayRuntimeState
+                    {
+                        RequestedMode = "jit",
+                        EffectiveMode = GatewayRuntimeMode.Jit,
+                        DynamicCodeSupported = true
+                    },
+                    ChatClient = new MafTestChatClient(),
+                    Tools = [new TestTool("echo_tool"), new TestTool("shell")],
+                    MemoryStore = new FileMemoryStore(storagePath, 4),
+                    RuntimeMetrics = new RuntimeMetrics(),
+                    ProviderUsage = new ProviderUsageTracker(),
+                    LlmExecutionService = executionService,
+                    Skills = [],
+                    SkillsConfig = new SkillsConfig(),
+                    WorkspacePath = null,
+                    PluginSkillDirs = [],
+                    Logger = NullLogger.Instance,
+                    Hooks = [],
+                    RequireToolApproval = false,
+                    ApprovalRequiredTools = [],
+                    IsContractTokenBudgetExceeded = null,
+                    IsContractRuntimeBudgetExceeded = null,
+                    RecordContractTurnUsage = null,
+                    AppendContractSnapshot = null
+                },
+                new MafOptions(),
+                new MafAgentFactory(Options.Create(new MafOptions()), NullLoggerFactory.Instance, services),
+                new MafSessionStateStore(
+                    new GatewayConfig
+                    {
+                        Memory = new MemoryConfig
+                        {
+                            StoragePath = storagePath
+                        }
+                    },
+                    Options.Create(new MafOptions()),
+                    NullLogger<MafSessionStateStore>.Instance),
+                new MafTelemetryAdapter(),
+                NullLogger<MafAgentRuntime>.Instance);
+
+            await runtime.RunAsync(CreateSession("maf-turn-routing-probe-reduction"), "route this turn", TestContext.Current.CancellationToken);
+
+            Assert.NotNull(capturedRequest);
+            var reducedTools = Assert.IsAssignableFrom<IList<AITool>>(capturedRequest!.BaseOptions.Tools);
+            Assert.Equal(["echo_tool"], reducedTools.Select(tool => tool.Name).OrderBy(name => name, StringComparer.Ordinal).ToArray());
+
+            var probeContext = Assert.Single(reducer.Contexts, static context => context.IsTurnRoutingProbe);
+            Assert.Equal("route this turn", probeContext.UserMessage);
+
+            var modelCallContext = Assert.Single(reducer.Contexts, static context => !context.IsTurnRoutingProbe);
+            Assert.Equal("route this turn", modelCallContext.UserMessage);
         }
         finally
         {
@@ -4426,6 +4617,35 @@ public sealed class MafAdapterTests
         public ValueTask<ToolDeclarationReductionResult> ReduceAsync(ToolDeclarationReductionContext context, CancellationToken ct)
         {
             _ = ct;
+            var tools = context.CandidateTools.Where(tool => string.Equals(tool.Name, toolName, StringComparison.Ordinal)).ToArray();
+            return ValueTask.FromResult(new ToolDeclarationReductionResult
+            {
+                Tools = tools,
+                Diagnostics = new ToolDeclarationReductionDiagnostics
+                {
+                    Enabled = true,
+                    Mode = "test",
+                    CandidateCount = context.CandidateTools.Count,
+                    SelectedCount = tools.Length,
+                    MaxTools = context.Config.MaxTools,
+                    HardMaxTools = context.Config.HardMaxTools,
+                    SelectedTools = tools.Select(static tool => tool.Name).ToArray()
+                }
+            });
+        }
+    }
+
+    private sealed class RecordingDeclarationReducer(string toolName) : IToolDeclarationReducer
+    {
+        public List<ToolDeclarationReductionContext> Contexts { get; } = [];
+
+        public ToolDeclarationReductionContext? LastContext { get; private set; }
+
+        public ValueTask<ToolDeclarationReductionResult> ReduceAsync(ToolDeclarationReductionContext context, CancellationToken ct)
+        {
+            _ = ct;
+            LastContext = context;
+            Contexts.Add(context);
             var tools = context.CandidateTools.Where(tool => string.Equals(tool.Name, toolName, StringComparison.Ordinal)).ToArray();
             return ValueTask.FromResult(new ToolDeclarationReductionResult
             {
