@@ -559,6 +559,47 @@ public sealed class OpenClawToolExecutorTests
         Assert.Equal(["read_file", "shell"], tools.Select(static item => item.Name).ToArray());
     }
 
+    [Fact]
+    public void GetToolDeclarations_WhenGovernanceDeniesReducedTool_ExcludesItFromDeclarations()
+    {
+        var config = new GatewayConfig();
+        config.Tooling.DeclarationReduction.Enabled = true;
+        config.Governance.Enabled = true;
+        var executor = CreateExecutor(
+            [new RecordingTool("read_file", "ok"), new RecordingTool("shell", "ok")],
+            config: config,
+            toolDeclarationReducer: new ReturningToolDeclarationReducer(["shell", "read_file"]),
+            toolGovernance: new FakeToolGovernanceService(new Dictionary<string, GovernanceDecision>(StringComparer.Ordinal)
+            {
+                ["shell"] = new() { Allowed = false, Action = GovernanceAction.Deny, Reason = "denied" }
+            }));
+
+        var tools = executor.GetToolDeclarations(CreateSession(), "read a file");
+
+        Assert.Equal(["read_file"], tools.Select(static item => item.Name).ToArray());
+    }
+
+    [Fact]
+    public void GetToolDeclarations_WhenGovernanceDeniesAllReducedTools_FallsBackToGovernanceAllowedCandidates()
+    {
+        var config = new GatewayConfig();
+        config.Tooling.DeclarationReduction.Enabled = true;
+        config.Tooling.DeclarationReduction.FallbackToPresetOnEmpty = true;
+        config.Governance.Enabled = true;
+        var executor = CreateExecutor(
+            [new RecordingTool("read_file", "ok"), new RecordingTool("shell", "ok")],
+            config: config,
+            toolDeclarationReducer: new ReturningToolDeclarationReducer(["shell"]),
+            toolGovernance: new FakeToolGovernanceService(new Dictionary<string, GovernanceDecision>(StringComparer.Ordinal)
+            {
+                ["shell"] = new() { Allowed = false, Action = GovernanceAction.Deny, Reason = "denied" }
+            }));
+
+        var tools = executor.GetToolDeclarations(CreateSession(), "read a file");
+
+        Assert.Equal(["read_file"], tools.Select(static item => item.Name).ToArray());
+    }
+
     private static OpenClawToolExecutor CreateExecutor(
         IReadOnlyList<ITool> tools,
         IToolSandbox? toolSandbox = null,
@@ -566,7 +607,8 @@ public sealed class OpenClawToolExecutorTests
         ILogger? logger = null,
         IReadOnlyList<IToolResultInterceptor>? interceptors = null,
         IToolPresetResolver? toolPresetResolver = null,
-        IToolDeclarationReducer? toolDeclarationReducer = null)
+        IToolDeclarationReducer? toolDeclarationReducer = null,
+        IToolGovernanceService? toolGovernance = null)
         => new(
             tools,
             toolTimeoutSeconds: 5,
@@ -579,6 +621,7 @@ public sealed class OpenClawToolExecutorTests
             toolSandbox: toolSandbox,
             toolPresetResolver: toolPresetResolver,
             toolDeclarationReducer: toolDeclarationReducer,
+            toolGovernance: toolGovernance,
             interceptors: interceptors);
 
     private static Session CreateSession(string channelId = "websocket", string? prompt = null)
@@ -787,6 +830,24 @@ public sealed class OpenClawToolExecutorTests
     {
         public ValueTask<ToolDeclarationReductionResult> ReduceAsync(ToolDeclarationReductionContext context, CancellationToken ct)
             => throw new InvalidOperationException("reducer failed");
+    }
+
+    private sealed class FakeToolGovernanceService(IReadOnlyDictionary<string, GovernanceDecision> decisions) : IToolGovernanceService
+    {
+        public ValueTask<GovernanceDecision> AuthorizeAsync(
+            ToolGovernanceContext context,
+            CancellationToken cancellationToken = default)
+            => ValueTask.FromResult(
+                decisions.TryGetValue(context.ToolName, out var decision)
+                    ? decision
+                    : GovernanceDecision.Allow("allowed"));
+
+        public ValueTask RecordResultAsync(
+            ToolGovernanceContext context,
+            GovernanceDecision decision,
+            ToolGovernanceExecutionResult result,
+            CancellationToken cancellationToken = default)
+            => ValueTask.CompletedTask;
     }
 
     private sealed class ListLogger : ILogger

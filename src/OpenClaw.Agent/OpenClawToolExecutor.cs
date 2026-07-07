@@ -125,6 +125,7 @@ public sealed class OpenClawToolExecutor
         var candidates = _toolDeclarations
             .Where(item => IsToolAllowedForSession(session, item.Name, preset))
             .ToArray();
+        var governanceEnabled = _config.Governance.Enabled;
 
         var reductionConfig = _config.Tooling.DeclarationReduction;
         if (!reductionConfig.Enabled || string.Equals(reductionConfig.Mode, "off", StringComparison.OrdinalIgnoreCase) || _toolDeclarationReducer is null)
@@ -144,18 +145,24 @@ public sealed class OpenClawToolExecutor
                 IsTurnRoutingProbe = request?.IsTurnRoutingProbe ?? false
             }, CancellationToken.None).AsTask().GetAwaiter().GetResult();
 
-            var allowedCandidateNames = candidates
-                .Select(static item => item.Name)
-                .ToHashSet(StringComparer.Ordinal);
-            var filteredTools = reduction.Tools
-                .Where(tool => allowedCandidateNames.Contains(tool.Name))
+            var candidatesByName = candidates.ToDictionary(static item => item.Name, StringComparer.Ordinal);
+            var reducedTools = reduction.Tools
+                .Select(tool => candidatesByName.TryGetValue(tool.Name, out var candidate) ? candidate : null)
+                .Where(static tool => tool is not null)
+                .Cast<AITool>()
                 .ToArray();
+            var governanceAllowedCandidates = governanceEnabled
+                ? FilterToolDeclarationsByGovernance(session, candidates)
+                : candidates;
+            var filteredTools = governanceEnabled
+                ? FilterToolDeclarationsByGovernance(session, reducedTools)
+                : reducedTools;
 
             if (filteredTools.Length > 0 || !reductionConfig.FallbackToPresetOnEmpty)
                 return filteredTools;
 
-            _logger?.LogWarning("Tool declaration reduction returned no tools; falling back to {CandidateCount} preset-allowed tools.", candidates.Length);
-            return candidates;
+            _logger?.LogWarning("Tool declaration reduction returned no tools; falling back to {CandidateCount} preset-allowed tools after governance filtering.", governanceAllowedCandidates.Length);
+            return governanceAllowedCandidates;
         }
         catch (Exception ex)
         {
@@ -904,6 +911,43 @@ public sealed class OpenClawToolExecutor
             return session.RouteAllowedTools.Contains(toolName, StringComparer.OrdinalIgnoreCase);
 
         return true;
+    }
+
+    private AITool[] FilterToolDeclarationsByGovernance(Session session, IReadOnlyList<AITool> tools)
+    {
+        if (tools.Count == 0)
+            return [];
+
+        var allowedTools = new List<AITool>(tools.Count);
+        foreach (var declaration in tools)
+        {
+            if (!_toolsByName.TryGetValue(declaration.Name, out var tool))
+                continue;
+
+            var argumentsJson = "{}";
+            var actionDescriptor = ResolveToolActionDescriptor(tool, argumentsJson);
+            var governanceDescriptor = ToolGovernanceDescriptorCatalog.Resolve(tool.Name, tool.Description, actionDescriptor);
+            var governanceContext = new ToolGovernanceContext
+            {
+                AgentId = session.Id,
+                SessionId = session.Id,
+                ChannelId = session.ChannelId,
+                SenderId = session.SenderId,
+                CorrelationId = session.Id,
+                CallId = null,
+                ToolName = tool.Name,
+                ArgumentsJson = argumentsJson,
+                ActionDescriptor = actionDescriptor,
+                Descriptor = governanceDescriptor,
+                IsStreaming = false
+            };
+
+            var decision = _toolGovernance.AuthorizeAsync(governanceContext, CancellationToken.None).AsTask().GetAwaiter().GetResult();
+            if (decision.Action == GovernanceAction.RequireApproval || decision.Allowed)
+                allowedTools.Add(declaration);
+        }
+
+        return [.. allowedTools];
     }
 
     private static ToolActionDescriptor ResolveToolActionDescriptor(ITool tool, string argsJson)
