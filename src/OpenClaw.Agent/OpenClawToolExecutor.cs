@@ -44,6 +44,7 @@ public sealed class OpenClawToolExecutor
     private readonly ToolUsageTracker? _toolUsageTracker;
     private readonly ToolExecutionRouter _executionRouter;
     private readonly IToolPresetResolver? _toolPresetResolver;
+    private readonly IToolDeclarationReducer? _toolDeclarationReducer;
     private readonly ToolAuditLog? _auditLog;
     private readonly IRedactionPipeline _redaction;
     private readonly ISentinelSubstitutionService _sentinelSubstitution;
@@ -64,6 +65,7 @@ public sealed class OpenClawToolExecutor
         ToolUsageTracker? toolUsageTracker = null,
         ToolExecutionRouter? executionRouter = null,
         IToolPresetResolver? toolPresetResolver = null,
+        IToolDeclarationReducer? toolDeclarationReducer = null,
         ToolAuditLog? auditLog = null,
         IRedactionPipeline? redaction = null,
         ISentinelSubstitutionService? sentinelSubstitution = null,
@@ -96,6 +98,7 @@ public sealed class OpenClawToolExecutor
         _toolUsageTracker = toolUsageTracker;
         _executionRouter = executionRouter ?? new ToolExecutionRouter(_config, _toolSandbox, logger);
         _toolPresetResolver = toolPresetResolver;
+        _toolDeclarationReducer = toolDeclarationReducer;
         _auditLog = auditLog;
         _redaction = redaction ?? new NoopRedactionPipeline();
         _sentinelSubstitution = sentinelSubstitution ?? new NoopSentinelSubstitutionService();
@@ -108,14 +111,50 @@ public sealed class OpenClawToolExecutor
     public IList<AITool> ToolDeclarations => _toolDeclarations;
 
     public IList<AITool> GetToolDeclarations(Session session)
+        => GetToolDeclarations(session, userMessage: null, request: null);
+
+    public IList<AITool> GetToolDeclarations(
+        Session session,
+        string? userMessage,
+        ToolDeclarationReductionRequest? request = null)
     {
         if (session.RouteToolsDisabled)
             return [];
 
         var preset = _toolPresetResolver?.Resolve(session, _toolsByName.Keys);
-        return _toolDeclarations
+        var candidates = _toolDeclarations
             .Where(item => IsToolAllowedForSession(session, item.Name, preset))
             .ToArray();
+
+        var reductionConfig = _config.Tooling.DeclarationReduction;
+        if (!reductionConfig.Enabled || string.Equals(reductionConfig.Mode, "off", StringComparison.OrdinalIgnoreCase) || _toolDeclarationReducer is null)
+            return candidates;
+
+        try
+        {
+            var reduction = _toolDeclarationReducer.ReduceAsync(new ToolDeclarationReductionContext
+            {
+                Session = session,
+                UserMessage = userMessage,
+                CandidateTools = candidates,
+                Preset = preset,
+                Config = reductionConfig,
+                RecentToolNames = request?.RecentToolNames ?? [],
+                RecentToolFailures = request?.RecentToolFailures ?? new Dictionary<string, int>(StringComparer.Ordinal),
+                IsTurnRoutingProbe = request?.IsTurnRoutingProbe ?? false
+            }, CancellationToken.None).AsTask().GetAwaiter().GetResult();
+
+            if (reduction.Tools.Count > 0 || !reductionConfig.FallbackToPresetOnEmpty)
+                return reduction.Tools.ToArray();
+
+            _logger?.LogWarning("Tool declaration reduction returned no tools; falling back to {CandidateCount} preset-allowed tools.", candidates.Length);
+            return candidates;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Tool declaration reduction failed; falling back to {CandidateCount} preset-allowed tools.", candidates.Length);
+            return candidates;
+        }
     }
 
     public bool SupportsStreaming(string toolName)

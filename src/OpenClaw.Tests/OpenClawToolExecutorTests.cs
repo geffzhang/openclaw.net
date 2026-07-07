@@ -475,12 +475,56 @@ public sealed class OpenClawToolExecutorTests
         Assert.Equal(0, tool.CallCount);
     }
 
+    [Fact]
+    public void GetToolDeclarations_WhenReductionDisabled_ReturnsPresetAllowedDeclarations()
+    {
+        var executor = CreateExecutor([new RecordingTool("read_file", "ok"), new RecordingTool("shell", "ok")]);
+        var session = CreateSession();
+
+        var tools = executor.GetToolDeclarations(session, "read a file");
+
+        Assert.Equal(["read_file", "shell"], tools.Select(static item => item.Name).ToArray());
+    }
+
+    [Fact]
+    public void GetToolDeclarations_WhenReductionEnabled_UsesReducer()
+    {
+        var reducer = new FixedToolDeclarationReducer(["read_file"]);
+        var config = new GatewayConfig();
+        config.Tooling.DeclarationReduction.Enabled = true;
+        var executor = CreateExecutor(
+            [new RecordingTool("read_file", "ok"), new RecordingTool("shell", "ok")],
+            config: config,
+            toolDeclarationReducer: reducer);
+
+        var tools = executor.GetToolDeclarations(CreateSession(), "read a file");
+
+        Assert.Equal(["read_file"], tools.Select(static item => item.Name).ToArray());
+        Assert.Equal("read a file", reducer.LastContext?.UserMessage);
+    }
+
+    [Fact]
+    public void GetToolDeclarations_WhenReducerThrows_FailsOpenToPresetAllowedTools()
+    {
+        var config = new GatewayConfig();
+        config.Tooling.DeclarationReduction.Enabled = true;
+        var executor = CreateExecutor(
+            [new RecordingTool("read_file", "ok"), new RecordingTool("shell", "ok")],
+            config: config,
+            toolDeclarationReducer: new ThrowingToolDeclarationReducer());
+
+        var tools = executor.GetToolDeclarations(CreateSession(), "read a file");
+
+        Assert.Equal(["read_file", "shell"], tools.Select(static item => item.Name).ToArray());
+    }
+
     private static OpenClawToolExecutor CreateExecutor(
         IReadOnlyList<ITool> tools,
         IToolSandbox? toolSandbox = null,
         GatewayConfig? config = null,
         ILogger? logger = null,
-        IReadOnlyList<IToolResultInterceptor>? interceptors = null)
+        IReadOnlyList<IToolResultInterceptor>? interceptors = null,
+        IToolDeclarationReducer? toolDeclarationReducer = null)
         => new(
             tools,
             toolTimeoutSeconds: 5,
@@ -491,6 +535,7 @@ public sealed class OpenClawToolExecutorTests
             logger: logger ?? NullLogger.Instance,
             config: config,
             toolSandbox: toolSandbox,
+            toolDeclarationReducer: toolDeclarationReducer,
             interceptors: interceptors);
 
     private static Session CreateSession(string channelId = "websocket", string? prompt = null)
@@ -592,6 +637,37 @@ public sealed class OpenClawToolExecutorTests
             Context = context;
             return new ValueTask<string>(context.RawOutput);
         }
+    }
+
+    private sealed class FixedToolDeclarationReducer(string[] selectedNames) : IToolDeclarationReducer
+    {
+        public ToolDeclarationReductionContext? LastContext { get; private set; }
+
+        public ValueTask<ToolDeclarationReductionResult> ReduceAsync(ToolDeclarationReductionContext context, CancellationToken ct)
+        {
+            LastContext = context;
+            var selected = context.CandidateTools.Where(tool => selectedNames.Contains(tool.Name, StringComparer.Ordinal)).ToArray();
+            return ValueTask.FromResult(new ToolDeclarationReductionResult
+            {
+                Tools = selected,
+                Diagnostics = new ToolDeclarationReductionDiagnostics
+                {
+                    Enabled = true,
+                    Mode = "test",
+                    CandidateCount = context.CandidateTools.Count,
+                    SelectedCount = selected.Length,
+                    MaxTools = context.Config.MaxTools,
+                    HardMaxTools = context.Config.HardMaxTools,
+                    SelectedTools = selected.Select(static tool => tool.Name).ToArray()
+                }
+            });
+        }
+    }
+
+    private sealed class ThrowingToolDeclarationReducer : IToolDeclarationReducer
+    {
+        public ValueTask<ToolDeclarationReductionResult> ReduceAsync(ToolDeclarationReductionContext context, CancellationToken ct)
+            => throw new InvalidOperationException("reducer failed");
     }
 
     private sealed class ListLogger : ILogger
