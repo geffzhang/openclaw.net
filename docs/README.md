@@ -27,6 +27,7 @@ Use this page as the map. If you are unsure where to go next, the groups below a
 | [TOOLS_GUIDE.md](TOOLS_GUIDE.md) | Native and optional tool catalog, behavior, and configuration. |
 | [MCPAPP.md](MCPAPP.md) | MCP App manifest discovery, lifecycle management, tool bridging, resources, prompts, and UI bundles. |
 | [tokenjuice.md](tokenjuice.md) | Deterministic, rule-driven tool output reduction before tool results enter model context. |
+| [tool-declaration-reduction.md](tool-declaration-reduction.md) | Pre-LLM tool schema reduction for lowering function and tool declaration token cost. |
 | [GOAL_TECHNICAL_ARCHITECTURE.md](GOAL_TECHNICAL_ARCHITECTURE.md) | Session-scoped `/goal` auto-continuation architecture, states, tools, budget limits, and runtime integration. |
 | [LOOP_TECHNICAL_ARCHITECTURE.md](LOOP_TECHNICAL_ARCHITECTURE.md) | `/loop` recurring-prompt command architecture, scheduler behavior, control tool, and termination model. |
 | [zh-CN/TOOLS_GUIDE.md](zh-CN/TOOLS_GUIDE.md) | 原生和可选工具目录与配置（简体中文）。 |
