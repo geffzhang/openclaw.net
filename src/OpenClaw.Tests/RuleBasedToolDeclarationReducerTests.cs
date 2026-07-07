@@ -80,13 +80,99 @@ public sealed class RuleBasedToolDeclarationReducerTests
         Assert.Equal(0.0, result.Diagnostics.Scores["irrelevant_alpha"]);
     }
 
-    private static ToolDeclarationReductionContext Context(IReadOnlyList<AITool> tools, string prompt, int maxTools, int hardMaxTools = 24, int minTools = 1, double minScore = 0.0)
+    [Fact]
+    public async Task ReduceAsync_RouteToolsDisabledReturnsNoTools()
+    {
+        var reducer = new RuleBasedToolDeclarationReducer();
+        var tools = new[]
+        {
+            Tool("read_file", "Read a file from disk", "path"),
+            Tool("message", "Send a message", "text")
+        };
+        var context = Context(tools, "read_file message", maxTools: 2);
+        context.Session.RouteToolsDisabled = true;
+        context.Config.AlwaysIncludeTools = ["read_file"];
+
+        var result = await reducer.ReduceAsync(context, TestContext.Current.CancellationToken);
+
+        Assert.Empty(result.Tools);
+        Assert.Empty(result.Diagnostics.SelectedTools);
+        Assert.Empty(result.Diagnostics.PinnedTools);
+        Assert.Equal(0, result.Diagnostics.SelectedCount);
+    }
+
+    [Fact]
+    public async Task ReduceAsync_RouteAndPresetAllowlistsFilterScoredAndPinnedTools()
+    {
+        var reducer = new RuleBasedToolDeclarationReducer();
+        var tools = new[]
+        {
+            Tool("read_file", "Read a file from disk", "path"),
+            Tool("message", "Send a message", "text"),
+            Tool("browser", "Open a web page", "url")
+        };
+        var preset = new ResolvedToolPreset
+        {
+            PresetId = "readonly",
+            AllowedTools = new HashSet<string>(["message", "browser"], StringComparer.OrdinalIgnoreCase)
+        };
+        var context = Context(tools, "read_file message browser", maxTools: 3, preset: preset);
+        context.Session.RouteAllowedTools = ["read_file", "message"];
+        context.Config.AlwaysIncludeTools = ["read_file", "browser", "message"];
+
+        var result = await reducer.ReduceAsync(context, TestContext.Current.CancellationToken);
+
+        Assert.Equal(["message"], result.Tools.Select(static item => item.Name).ToArray());
+        Assert.Equal(["message"], result.Diagnostics.PinnedTools);
+        Assert.Equal(["read_file", "browser"], result.Diagnostics.SkippedPinnedTools);
+    }
+
+    [Fact]
+    public async Task ReduceAsync_NeverAutoIncludeBlocksScoredAndBackfillSelection()
+    {
+        var reducer = new RuleBasedToolDeclarationReducer();
+        var tools = new[]
+        {
+            Tool("message", "Send a message", "text"),
+            Tool("read_file", "Read a file from disk", "path")
+        };
+        var context = Context(tools, "send a message", maxTools: 2, minTools: 2);
+        context.Config.NeverAutoIncludeTools = ["message"];
+
+        var result = await reducer.ReduceAsync(context, TestContext.Current.CancellationToken);
+
+        Assert.Equal(["read_file"], result.Tools.Select(static item => item.Name).ToArray());
+        Assert.DoesNotContain(result.Tools, static tool => string.Equals(tool.Name, "message", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ReduceAsync_NeverAutoIncludeDoesNotBlockAllowedAlwaysIncludeTools()
+    {
+        var reducer = new RuleBasedToolDeclarationReducer();
+        var tools = new[]
+        {
+            Tool("message", "Send a message", "text"),
+            Tool("read_file", "Read a file from disk", "path")
+        };
+        var context = Context(tools, "read_file", maxTools: 2);
+        context.Session.RouteAllowedTools = ["message", "read_file"];
+        context.Config.AlwaysIncludeTools = ["message"];
+        context.Config.NeverAutoIncludeTools = ["message"];
+
+        var result = await reducer.ReduceAsync(context, TestContext.Current.CancellationToken);
+
+        Assert.Contains("message", result.Tools.Select(static item => item.Name), StringComparer.Ordinal);
+        Assert.Equal(["message"], result.Diagnostics.PinnedTools);
+    }
+
+    private static ToolDeclarationReductionContext Context(IReadOnlyList<AITool> tools, string prompt, int maxTools, int hardMaxTools = 24, int minTools = 1, double minScore = 0.0, ResolvedToolPreset? preset = null)
     {
         return new ToolDeclarationReductionContext
         {
             Session = new Session { Id = "sess1", ChannelId = "websocket", SenderId = "user1" },
             UserMessage = prompt,
             CandidateTools = tools,
+            Preset = preset,
             Config = new ToolDeclarationReductionConfig
             {
                 Enabled = true,

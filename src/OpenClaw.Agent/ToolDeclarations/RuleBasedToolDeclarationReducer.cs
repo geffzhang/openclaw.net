@@ -1,11 +1,13 @@
 using Microsoft.Extensions.AI;
 using OpenClaw.Core.Abstractions;
+using OpenClaw.Core.Models;
 
 namespace OpenClaw.Agent.ToolDeclarations;
 
 public sealed class RuleBasedToolDeclarationReducer : IToolDeclarationReducer
 {
     private static readonly string[] HighRiskTools = ["shell", "process", "write_file", "code_exec"];
+    private static readonly StringComparer ToolNameComparer = StringComparer.OrdinalIgnoreCase;
 
     public ValueTask<ToolDeclarationReductionResult> ReduceAsync(ToolDeclarationReductionContext context, CancellationToken ct)
     {
@@ -15,8 +17,19 @@ public sealed class RuleBasedToolDeclarationReducer : IToolDeclarationReducer
         var hardMax = Math.Max(1, config.HardMaxTools);
         var maxTools = Math.Clamp(config.MaxTools, 1, hardMax);
         var minTools = Math.Clamp(config.MinTools, 0, maxTools);
+        if (context.Session.RouteToolsDisabled)
+            return ValueTask.FromResult(CreateResult(context, [], [], [], [], maxTools, hardMax));
+
+        var allowedCandidates = context.CandidateTools
+            .Where(tool => IsAllowedByRoute(tool.Name, context.Session.RouteAllowedTools))
+            .Where(tool => IsAllowedByPreset(tool.Name, context.Preset))
+            .ToArray();
+        var neverAutoInclude = config.NeverAutoIncludeTools
+            .Where(static item => !string.IsNullOrWhiteSpace(item))
+            .Select(static item => item.Trim())
+            .ToHashSet(ToolNameComparer);
         var promptTokens = Tokenize(context.UserMessage ?? string.Empty).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var candidateByName = context.CandidateTools.ToDictionary(static tool => tool.Name, StringComparer.Ordinal);
+        var candidateByName = allowedCandidates.ToDictionary(static tool => tool.Name, ToolNameComparer);
         var selected = new List<AITool>();
         var pinned = new List<string>();
         var skippedPinned = new List<string>();
@@ -29,7 +42,7 @@ public sealed class RuleBasedToolDeclarationReducer : IToolDeclarationReducer
                 continue;
             }
 
-            if (candidateByName.TryGetValue(requested.Trim(), out var tool) && selected.All(existing => !string.Equals(existing.Name, tool.Name, StringComparison.Ordinal)))
+            if (candidateByName.TryGetValue(requested.Trim(), out var tool) && selected.All(existing => !ToolNameComparer.Equals(existing.Name, tool.Name)))
             {
                 selected.Add(tool);
                 pinned.Add(tool.Name);
@@ -40,8 +53,9 @@ public sealed class RuleBasedToolDeclarationReducer : IToolDeclarationReducer
             }
         }
 
-        var scores = context.CandidateTools
-            .Where(tool => selected.All(existing => !string.Equals(existing.Name, tool.Name, StringComparison.Ordinal)))
+        var scores = allowedCandidates
+            .Where(tool => !neverAutoInclude.Contains(tool.Name))
+            .Where(tool => selected.All(existing => !ToolNameComparer.Equals(existing.Name, tool.Name)))
             .Select(tool => new ToolScore(tool, Score(tool, promptTokens, context)))
             .OrderByDescending(static item => item.Score)
             .ThenBy(static item => item.Tool.Name, StringComparer.Ordinal)
@@ -61,9 +75,21 @@ public sealed class RuleBasedToolDeclarationReducer : IToolDeclarationReducer
             selected.Add(item.Tool);
         }
 
+        return ValueTask.FromResult(CreateResult(context, selected, pinned, skippedPinned, scores, maxTools, hardMax));
+    }
+
+    private static ToolDeclarationReductionResult CreateResult(
+        ToolDeclarationReductionContext context,
+        IReadOnlyList<AITool> selected,
+        IReadOnlyList<string> pinned,
+        IReadOnlyList<string> skippedPinned,
+        IReadOnlyList<ToolScore> scores,
+        int maxTools,
+        int hardMax)
+    {
         var scoreMap = scores.ToDictionary(static item => item.Tool.Name, static item => item.Score, StringComparer.Ordinal);
         foreach (var tool in selected)
-            scoreMap.TryAdd(tool.Name, pinned.Contains(tool.Name, StringComparer.Ordinal) ? 1.0 : 0.0);
+            scoreMap.TryAdd(tool.Name, pinned.Contains(tool.Name, ToolNameComparer) ? 1.0 : 0.0);
 
         var diagnostics = new ToolDeclarationReductionDiagnostics
         {
@@ -80,11 +106,21 @@ public sealed class RuleBasedToolDeclarationReducer : IToolDeclarationReducer
             Scores = scoreMap
         };
 
-        return ValueTask.FromResult(new ToolDeclarationReductionResult
+        return new ToolDeclarationReductionResult
         {
             Tools = selected,
             Diagnostics = diagnostics
-        });
+        };
+    }
+
+    private static bool IsAllowedByRoute(string toolName, string[] routeAllowedTools)
+    {
+        return routeAllowedTools.Length == 0 || routeAllowedTools.Contains(toolName, ToolNameComparer);
+    }
+
+    private static bool IsAllowedByPreset(string toolName, ResolvedToolPreset? preset)
+    {
+        return preset?.AllowedTools.Count is not > 0 || preset.AllowedTools.Contains(toolName);
     }
 
     private static double Score(AITool tool, HashSet<string> promptTokens, ToolDeclarationReductionContext context)
