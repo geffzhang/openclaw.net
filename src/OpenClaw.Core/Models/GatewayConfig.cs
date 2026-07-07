@@ -470,9 +470,25 @@ public sealed class ToolingConfig
     public bool BrowserHeadless { get; set; } = true;
     public int BrowserTimeoutSeconds { get; set; } = 30;
     public UrlSafetyConfig UrlSafety { get; set; } = new();
+    public ToolDeclarationReductionConfig DeclarationReduction { get; set; } = new();
     public Dictionary<string, ToolsetConfig> Toolsets { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, ToolPresetConfig> Presets { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, string> SurfaceBindings { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+}
+
+public sealed class ToolDeclarationReductionConfig
+{
+    public bool Enabled { get; set; } = false;
+    public string Mode { get; set; } = "rule";
+    public int MaxTools { get; set; } = 16;
+    public int MinTools { get; set; } = 4;
+    public int HardMaxTools { get; set; } = 24;
+    public double MinScore { get; set; } = 0.10;
+    public bool FallbackToPresetOnEmpty { get; set; } = true;
+    public bool FallbackToRuleWhenSemanticUnavailable { get; set; } = true;
+    public bool EnablePromptDistillation { get; set; } = false;
+    public string[] AlwaysIncludeTools { get; set; } = [];
+    public string[] NeverAutoIncludeTools { get; set; } = [];
 }
 
 public sealed class HarnessConfig

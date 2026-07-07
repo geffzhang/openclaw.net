@@ -918,6 +918,7 @@ public sealed class SessionDelegationChildSummary
 [JsonSerializable(typeof(UrlSafetyConfig))]
 [JsonSerializable(typeof(WebSocketConfig))]
 [JsonSerializable(typeof(ToolingConfig))]
+[JsonSerializable(typeof(ToolDeclarationReductionConfig))]
 [JsonSerializable(typeof(HarnessConfig))]
 [JsonSerializable(typeof(PlanExecuteVerifyOptions))]
 [JsonSerializable(typeof(PlanExecuteVerifyRun))]
