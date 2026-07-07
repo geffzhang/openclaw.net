@@ -125,14 +125,15 @@ public sealed class OpenClawToolExecutor
         var candidates = _toolDeclarations
             .Where(item => IsToolAllowedForSession(session, item.Name, preset))
             .ToArray();
-        var governanceEnabled = _config.Governance.Enabled;
-        var governanceAllowedCandidates = governanceEnabled
-            ? FilterToolDeclarationsByGovernance(session, candidates)
-            : candidates;
 
         var reductionConfig = _config.Tooling.DeclarationReduction;
         if (!reductionConfig.Enabled || string.Equals(reductionConfig.Mode, "off", StringComparison.OrdinalIgnoreCase) || _toolDeclarationReducer is null)
             return candidates;
+
+        var governanceEnabled = _config.Governance.Enabled;
+        var governanceAllowedCandidates = governanceEnabled
+            ? FilterToolDeclarationsByGovernance(session, candidates)
+            : candidates;
 
         try
         {

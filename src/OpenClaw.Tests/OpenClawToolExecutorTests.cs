@@ -480,12 +480,22 @@ public sealed class OpenClawToolExecutorTests
     [Fact]
     public void GetToolDeclarations_WhenReductionDisabled_ReturnsPresetAllowedDeclarations()
     {
-        var executor = CreateExecutor([new RecordingTool("read_file", "ok"), new RecordingTool("shell", "ok")]);
+        var governance = new FakeToolGovernanceService(new Dictionary<string, GovernanceDecision>(StringComparer.Ordinal)
+        {
+            ["shell"] = new() { Allowed = false, Action = GovernanceAction.Deny, Reason = "denied" }
+        });
+        var config = new GatewayConfig();
+        config.Governance.Enabled = true;
+        var executor = CreateExecutor(
+            [new RecordingTool("read_file", "ok"), new RecordingTool("shell", "ok")],
+            config: config,
+            toolGovernance: governance);
         var session = CreateSession();
 
         var tools = executor.GetToolDeclarations(session, "read a file");
 
         Assert.Equal(["read_file", "shell"], tools.Select(static item => item.Name).ToArray());
+        Assert.Equal(0, governance.AuthorizeCallCount);
     }
 
     [Fact]
@@ -854,13 +864,18 @@ public sealed class OpenClawToolExecutorTests
 
     private sealed class FakeToolGovernanceService(IReadOnlyDictionary<string, GovernanceDecision> decisions) : IToolGovernanceService
     {
+        public int AuthorizeCallCount { get; private set; }
+
         public ValueTask<GovernanceDecision> AuthorizeAsync(
             ToolGovernanceContext context,
             CancellationToken cancellationToken = default)
-            => ValueTask.FromResult(
+        {
+            AuthorizeCallCount++;
+            return ValueTask.FromResult(
                 decisions.TryGetValue(context.ToolName, out var decision)
                     ? decision
                     : GovernanceDecision.Allow("allowed"));
+        }
 
         public ValueTask RecordResultAsync(
             ToolGovernanceContext context,
