@@ -61,7 +61,26 @@ public sealed class RuleBasedToolDeclarationReducerTests
         Assert.Equal(["tool_4"], result.Diagnostics.SkippedPinnedTools);
     }
 
-    private static ToolDeclarationReductionContext Context(IReadOnlyList<AITool> tools, string prompt, int maxTools, int hardMaxTools = 24)
+    [Fact]
+    public async Task ReduceAsync_BackfillsBelowMinScoreOnlyToMinTools()
+    {
+        var reducer = new RuleBasedToolDeclarationReducer();
+        var tools = new[]
+        {
+            Tool("read_file", "Read a file from disk", "path"),
+            Tool("irrelevant_alpha", "Unrelated helper", "alpha"),
+            Tool("irrelevant_beta", "Unrelated helper", "beta"),
+            Tool("irrelevant_gamma", "Unrelated helper", "gamma")
+        };
+
+        var result = await reducer.ReduceAsync(Context(tools, "please use read_file", maxTools: 4, minTools: 2, minScore: 0.5), TestContext.Current.CancellationToken);
+
+        Assert.Equal(["read_file", "irrelevant_alpha"], result.Tools.Select(static item => item.Name).ToArray());
+        Assert.Equal(2, result.Diagnostics.SelectedCount);
+        Assert.Equal(0.0, result.Diagnostics.Scores["irrelevant_alpha"]);
+    }
+
+    private static ToolDeclarationReductionContext Context(IReadOnlyList<AITool> tools, string prompt, int maxTools, int hardMaxTools = 24, int minTools = 1, double minScore = 0.0)
     {
         return new ToolDeclarationReductionContext
         {
@@ -73,9 +92,9 @@ public sealed class RuleBasedToolDeclarationReducerTests
                 Enabled = true,
                 Mode = "rule",
                 MaxTools = maxTools,
-                MinTools = 1,
+                MinTools = minTools,
                 HardMaxTools = hardMaxTools,
-                MinScore = 0.0
+                MinScore = minScore
             }
         };
     }

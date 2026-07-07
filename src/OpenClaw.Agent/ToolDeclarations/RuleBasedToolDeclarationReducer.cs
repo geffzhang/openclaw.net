@@ -43,24 +43,22 @@ public sealed class RuleBasedToolDeclarationReducer : IToolDeclarationReducer
         var scores = context.CandidateTools
             .Where(tool => selected.All(existing => !string.Equals(existing.Name, tool.Name, StringComparison.Ordinal)))
             .Select(tool => new ToolScore(tool, Score(tool, promptTokens, context)))
-            .Where(item => item.Score >= config.MinScore || selected.Count + minTools > 0)
             .OrderByDescending(static item => item.Score)
             .ThenBy(static item => item.Tool.Name, StringComparer.Ordinal)
             .ToArray();
 
-        foreach (var item in scores)
+        foreach (var item in scores.Where(item => item.Score >= config.MinScore))
         {
-            if (selected.Count >= maxTools)
+            if (selected.Count >= maxTools || selected.Count >= hardMax)
                 break;
             selected.Add(item.Tool);
         }
 
-        foreach (var item in scores)
+        foreach (var item in scores.Where(item => item.Score < config.MinScore))
         {
-            if (selected.Count >= minTools || selected.Count >= maxTools)
+            if (selected.Count >= minTools || selected.Count >= maxTools || selected.Count >= hardMax)
                 break;
-            if (selected.All(existing => !string.Equals(existing.Name, item.Tool.Name, StringComparison.Ordinal)))
-                selected.Add(item.Tool);
+            selected.Add(item.Tool);
         }
 
         var scoreMap = scores.ToDictionary(static item => item.Tool.Name, static item => item.Score, StringComparer.Ordinal);
